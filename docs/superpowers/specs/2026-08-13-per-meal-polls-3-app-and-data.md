@@ -58,6 +58,8 @@ The **out-toggle becomes per-meal** (part 1 re-keyed `day_attendance`): "I'm out
 
 Plus an "Add meal" action seeded from the defaults table in part 1.
 
+**Group creation must create real meals.** `onboarding/create-group.tsx` currently inserts `flats` + `flat_members` only; part 1 added an after-insert trigger (`20260813000001_default_flat_meal_trigger.sql`) giving every new flat a default Dinner meal, because a flat with no meal silently never gets a poll. That trigger is the floor, not the feature — this part should let the user pick their meals during onboarding and write real `flat_meals` rows. Keep the trigger regardless: it only fires when no meal was supplied, and it protects ad-hoc and fixture-created flats.
+
 Collapsed, each row shows a one-line summary — `"Breakfast · locks 07:00"` — consistent with the poll-times/cook summaries already in place.
 
 Validation, surfaced inline as the existing poll-times validation is: the computed open moment must precede `close_time`, and `close_time` must precede `serve_time`. Reject offsets beyond 48h (part 2 only scans today and tomorrow).

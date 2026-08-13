@@ -374,6 +374,16 @@ unordered result is not a choice."
 
 **Type consistency:** `flat_meal_id` is spelled identically across the schema doc, migration, and both fixtures. `defaultMealIdSql` is defined in T2S2 before use in T2S3. `seedOpenPoll`/`getPollForDate` signatures are unchanged, so the six spec files need no edits — as asserted in T2's Interfaces block.
 
+## What this plan missed (recorded after shipping)
+
+Three things the plan did not anticipate, all found by actually running against the live project:
+
+1. **The NOT NULL columns broke live writers.** The plan inherited the spec's "database only" framing. In fact `create_poll` failed on every run, and two `day_attendance` upserts (`use-today-cart.ts`, `use-attendance.ts`) broke, until each learned to resolve the flat's first meal. A NOT NULL column added to a table with live writers is never schema-only.
+2. **New flats were born meal-less.** `create-group.tsx` inserts `flats` + `flat_members` and knows nothing about meals, so every group created after the migration would silently never get a poll (`create_poll` skips a flat with no active meal). Fixed with an after-insert trigger (`20260813000001`) rather than an app-side insert, so the invariant does not depend on each writer remembering.
+3. **Task 2's fixture sweep was too narrow.** It covered `e2e/fixtures/` but not inline SQL inside spec files; `poll-lifecycle.spec.ts:100` writes `day_attendance` directly with the old conflict target and broke. When a migration changes a key, grep the whole test tree for the table name, not just the fixtures directory.
+
+Also worth knowing: `settings.spec.ts:58` is order-dependent (it needs a no-cook starting state, and `grocery-and-dispatch.spec.ts` toggles the cook's `is_active`). It passes in isolation and intermittently in a full run. Pre-existing, not caused by this work.
+
 ## Verification
 
 Part 1 is done when:
