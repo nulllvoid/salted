@@ -9,11 +9,19 @@ import { todayIst } from './poll-state';
 // create_poll's own selection logic (dietary veto, variety, exclusion) call
 // triggerCreatePoll from poll-state.ts instead and inspect what it actually
 // picked.
+// Resolves the flat's default (first, by position) meal. The per-meal
+// migration backfills every existing flat to exactly one 'Dinner' meal, so
+// tests that don't care about meals keep the single-poll behavior they had
+// before it landed.
+function defaultMealIdSql(flatId: string): string {
+  return `(select id from flat_meals where flat_id = '${flatId}' and is_active order by position, created_at limit 1)`;
+}
+
 export function seedOpenPoll(dishSlugs: string[], flatId: string = TEST_FLAT_ID, date: string = todayIst()) {
   dbQuery(`
-    insert into daily_polls (flat_id, poll_date, status)
-    values ('${flatId}', '${date}', 'open')
-    on conflict (flat_id, poll_date) do update set status = 'open';
+    insert into daily_polls (flat_id, flat_meal_id, poll_date, status)
+    values ('${flatId}', ${defaultMealIdSql(flatId)}, '${date}', 'open')
+    on conflict (flat_id, poll_date, flat_meal_id) do update set status = 'open';
 
     insert into poll_options (poll_id, recipe_id, position)
     select dp.id, r.id, v.position

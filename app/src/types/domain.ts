@@ -71,6 +71,7 @@ export type ActivityEntry =
 
 export interface TodayCartView {
   pollId: string;
+  flatMealId: string; // daily_polls.flat_meal_id — the meal this poll belongs to; day_attendance keys on it
   pollDate: string;
   status: PollStatus; // semantics: 'open' = cart editable, else locked
   headcount: number;

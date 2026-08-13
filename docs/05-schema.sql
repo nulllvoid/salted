@@ -10,6 +10,7 @@ create table profiles (                      -- 1:1 with auth.users
   diet_type text not null default 'veg' check (diet_type in ('veg','egg','nonveg')),
   is_jain boolean not null default false,
   allergies text[] not null default '{}',    -- values from: peanut,dairy,gluten,shellfish,soy
+  phone text,                                -- the member's own number; distinct from cooks.phone, not an auth identifier
   push_token text,
   notifications_muted boolean not null default false,
   created_at timestamptz not null default now()
@@ -62,6 +63,7 @@ create table recipes (
   jain_ok boolean not null default false,
   allergens text[] not null default '{}',
   seasons text[] not null default '{kharif,rabi,zaid}',  -- static seasonality tags (all = year-round)
+  suitable_bases text[] not null default '{full}',  -- which flat_meals.basis values this dish suits
   instructions_en text not null,              -- imperative, written for the cook
   image_path text,
   is_active boolean not null default true,
@@ -101,16 +103,41 @@ create table recipe_accompaniments (
   primary key (main_recipe_id, accompaniment_recipe_id)
 );
 
+-- ============ meals a group runs ============
+
+-- One row per meal a group runs each day. `name` is free user-facing text
+-- ('Brunch', 'Post-gym meal'); `basis` is the closed set that actually
+-- drives recipe suggestions, so a custom name never degrades suggestion
+-- quality. Schedule is anchored on serve_time: open_offset_min may exceed
+-- 1440, which is how a breakfast poll opens the previous evening, while
+-- close_time stays an absolute wall-clock time on the serving date because
+-- the lock is the deadline users actually think about ("locked by 7am").
+create table flat_meals (
+  id uuid primary key default gen_random_uuid(),
+  flat_id uuid not null references flats(id) on delete cascade,
+  name text not null,
+  basis text not null default 'full' check (basis in ('breakfast','light','full')),
+  serve_time time not null,
+  open_offset_min int not null check (open_offset_min > 0),
+  close_time time not null,
+  dispatch_offset_min int not null check (dispatch_offset_min >= 0),
+  position int not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create index flat_meals_flat on flat_meals(flat_id) where is_active;
+
 -- ============ daily loop ============
 
 create table daily_polls (
   id uuid primary key default gen_random_uuid(),
   flat_id uuid not null references flats(id) on delete cascade,
-  poll_date date not null,
+  flat_meal_id uuid not null references flat_meals(id) on delete cascade,
+  poll_date date not null,                    -- the SERVING date, even when the poll opened a day earlier
   status text not null default 'open' check (status in ('open','closed','cancelled','dispatched')),
   flat_note text,                             -- 'less spicy today' — editable until dispatch
   created_at timestamptz not null default now(),
-  unique (flat_id, poll_date)                 -- idempotent creation
+  unique (flat_id, poll_date, flat_meal_id)   -- idempotent creation, per meal
 );
 
 -- Suggested mains for the day — a fixed candidate list computed once by
@@ -151,13 +178,14 @@ create table cart_items (
   primary key (poll_id, recipe_id)
 );
 
-create table day_attendance (                 -- "I'm out today"
+create table day_attendance (                 -- "I'm out for this meal"
   flat_id uuid not null references flats(id) on delete cascade,
+  flat_meal_id uuid not null references flat_meals(id) on delete cascade,
   user_id uuid not null references profiles(id) on delete cascade,
   poll_date date not null,
   is_out boolean not null default false,
   updated_at timestamptz not null default now(),
-  primary key (flat_id, user_id, poll_date)
+  primary key (flat_id, user_id, poll_date, flat_meal_id)
 );
 
 -- Live "who did what" feed for the cart screen (mockup: "who did what" /

@@ -87,7 +87,7 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
 
     const { data: pollRow } = await supabase
       .from('daily_polls')
-      .select('id, poll_date, status')
+      .select('id, poll_date, status, flat_meal_id')
       .eq('flat_id', flatId)
       .eq('poll_date', todayIst)
       .maybeSingle();
@@ -170,6 +170,7 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
 
     setCart({
       pollId: pollRow.id,
+      flatMealId: pollRow.flat_meal_id,
       pollDate: pollRow.poll_date,
       status: pollRow.status as TodayCartView['status'],
       headcount: Math.max(memberCount - outUserIds.size, 0),
@@ -333,11 +334,17 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
   }
 
   async function setOutToday(isOut: boolean, reason?: string) {
-    if (!flatId || !userId) return;
+    if (!flatId || !userId || !cart) return;
     const todayIst = new Date(Date.now() + (5 * 60 + 30) * 60000).toISOString().slice(0, 10);
-    await supabase
-      .from('day_attendance')
-      .upsert({ flat_id: flatId, user_id: userId, poll_date: todayIst, is_out: isOut });
+    // day_attendance keys on the meal as of the per-meal migration, so
+    // being out for one meal no longer marks you out for the whole day.
+    await supabase.from('day_attendance').upsert({
+      flat_id: flatId,
+      flat_meal_id: cart.flatMealId,
+      user_id: userId,
+      poll_date: todayIst,
+      is_out: isOut,
+    });
     if (cart) {
       logActivity({
         pollId: cart.pollId,

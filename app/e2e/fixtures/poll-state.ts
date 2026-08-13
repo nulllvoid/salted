@@ -68,9 +68,16 @@ export async function resetPollState(flatId: string = TEST_FLAT_ID, date: string
   `);
 }
 
+// Returns the flat's first meal's poll for the date. The order-by is load
+// bearing now that a flat can run several meals on one date: rows[0] of an
+// unordered result is not a choice. Tests needing a specific meal's poll
+// should query by flat_meal_id directly.
 export function getPollForDate(flatId: string = TEST_FLAT_ID, date: string = todayIst()) {
   const rows = dbQuery(
-    `select id, status from daily_polls where flat_id = '${flatId}' and poll_date = '${date}';`
+    `select dp.id, dp.status from daily_polls dp
+     join flat_meals m on m.id = dp.flat_meal_id
+     where dp.flat_id = '${flatId}' and dp.poll_date = '${date}'
+     order by m.position, m.created_at limit 1;`
   ) as Record<string, unknown>[];
   return rows[0] ?? null;
 }

@@ -72,7 +72,27 @@ export function useAttendance(flatId: string | null | undefined) {
   // the current day's poll id when called from a cart-adjacent screen.
   async function setMemberOut(userId: string, isOut: boolean, actorId: string | undefined, pollId?: string) {
     if (!flatId) return;
-    await supabase.from('day_attendance').upsert({ flat_id: flatId, user_id: userId, poll_date: todayIst(), is_out: isOut });
+    // day_attendance keys on the meal as of the per-meal migration. This
+    // hook has no poll loaded, so it resolves the flat's first meal — which
+    // matches today's one-meal-per-flat reality; part 3 threads the
+    // selected meal through instead.
+    const { data: meal } = await supabase
+      .from('flat_meals')
+      .select('id')
+      .eq('flat_id', flatId)
+      .eq('is_active', true)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!meal) return;
+    await supabase.from('day_attendance').upsert({
+      flat_id: flatId,
+      flat_meal_id: meal.id,
+      user_id: userId,
+      poll_date: todayIst(),
+      is_out: isOut,
+    });
     if (actorId) {
       await supabase.from('activity_log').insert({
         flat_id: flatId,

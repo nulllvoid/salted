@@ -46,12 +46,36 @@ async function createPollForFlat(
   pollDate: string
 ) {
   try {
-    // Idempotent: unique (flat_id, poll_date) means a re-run is a no-op.
+    // daily_polls.flat_meal_id is NOT NULL as of the per-meal migration, so
+    // a poll must name the meal it belongs to. Until part 2 teaches this
+    // function to iterate flat_meals and schedule each meal on its own
+    // times, it targets the flat's first meal — which the migration's
+    // backfill guarantees exists (one 'Dinner' row per flat), preserving
+    // exactly one poll per flat per day.
+    const { data: defaultMeal, error: mealError } = await admin
+      .from('flat_meals')
+      .select('id')
+      .eq('flat_id', flatId)
+      .eq('is_active', true)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (mealError) throw mealError;
+    if (!defaultMeal) {
+      await logPipelineError(admin, 'create_poll', { message: 'flat has no active meal' }, flatId);
+      return;
+    }
+
+    // Idempotent: unique (flat_id, poll_date, flat_meal_id) means a re-run
+    // is a no-op.
     const { data: existing } = await admin
       .from('daily_polls')
       .select('id')
       .eq('flat_id', flatId)
       .eq('poll_date', pollDate)
+      .eq('flat_meal_id', defaultMeal.id)
       .maybeSingle();
 
     if (existing) return;
@@ -113,7 +137,7 @@ async function createPollForFlat(
 
     const { data: poll, error: pollError } = await admin
       .from('daily_polls')
-      .insert({ flat_id: flatId, poll_date: pollDate, status: 'open' })
+      .insert({ flat_id: flatId, flat_meal_id: defaultMeal.id, poll_date: pollDate, status: 'open' })
       .select('id')
       .single();
 

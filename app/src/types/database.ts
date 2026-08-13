@@ -177,6 +177,7 @@ export type Database = {
         Row: {
           created_at: string
           flat_id: string
+          flat_meal_id: string
           flat_note: string | null
           id: string
           poll_date: string
@@ -185,6 +186,7 @@ export type Database = {
         Insert: {
           created_at?: string
           flat_id: string
+          flat_meal_id: string
           flat_note?: string | null
           id?: string
           poll_date: string
@@ -193,6 +195,7 @@ export type Database = {
         Update: {
           created_at?: string
           flat_id?: string
+          flat_meal_id?: string
           flat_note?: string | null
           id?: string
           poll_date?: string
@@ -206,11 +209,19 @@ export type Database = {
             referencedRelation: "flats"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "daily_polls_flat_meal_id_fkey"
+            columns: ["flat_meal_id"]
+            isOneToOne: false
+            referencedRelation: "flat_meals"
+            referencedColumns: ["id"]
+          },
         ]
       }
       day_attendance: {
         Row: {
           flat_id: string
+          flat_meal_id: string
           is_out: boolean
           poll_date: string
           updated_at: string
@@ -218,6 +229,7 @@ export type Database = {
         }
         Insert: {
           flat_id: string
+          flat_meal_id: string
           is_out?: boolean
           poll_date: string
           updated_at?: string
@@ -225,6 +237,7 @@ export type Database = {
         }
         Update: {
           flat_id?: string
+          flat_meal_id?: string
           is_out?: boolean
           poll_date?: string
           updated_at?: string
@@ -236,6 +249,13 @@ export type Database = {
             columns: ["flat_id"]
             isOneToOne: false
             referencedRelation: "flats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "day_attendance_flat_meal_id_fkey"
+            columns: ["flat_meal_id"]
+            isOneToOne: false
+            referencedRelation: "flat_meals"
             referencedColumns: ["id"]
           },
           {
@@ -335,6 +355,56 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flat_meals: {
+        Row: {
+          basis: string
+          close_time: string
+          created_at: string
+          dispatch_offset_min: number
+          flat_id: string
+          id: string
+          is_active: boolean
+          name: string
+          open_offset_min: number
+          position: number
+          serve_time: string
+        }
+        Insert: {
+          basis?: string
+          close_time: string
+          created_at?: string
+          dispatch_offset_min: number
+          flat_id: string
+          id?: string
+          is_active?: boolean
+          name: string
+          open_offset_min: number
+          position?: number
+          serve_time: string
+        }
+        Update: {
+          basis?: string
+          close_time?: string
+          created_at?: string
+          dispatch_offset_min?: number
+          flat_id?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          open_offset_min?: number
+          position?: number
+          serve_time?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flat_meals_flat_id_fkey"
+            columns: ["flat_id"]
+            isOneToOne: false
+            referencedRelation: "flats"
             referencedColumns: ["id"]
           },
         ]
@@ -603,6 +673,7 @@ export type Database = {
           id: string
           is_jain: boolean
           notifications_muted: boolean
+          phone: string | null
           push_token: string | null
         }
         Insert: {
@@ -613,6 +684,7 @@ export type Database = {
           id: string
           is_jain?: boolean
           notifications_muted?: boolean
+          phone?: string | null
           push_token?: string | null
         }
         Update: {
@@ -623,6 +695,7 @@ export type Database = {
           id?: string
           is_jain?: boolean
           notifications_muted?: boolean
+          phone?: string | null
           push_token?: string | null
         }
         Relationships: []
@@ -755,6 +828,7 @@ export type Database = {
           name: string
           seasons: string[]
           slug: string
+          suitable_bases: string[]
         }
         Insert: {
           allergens?: string[]
@@ -771,6 +845,7 @@ export type Database = {
           name: string
           seasons?: string[]
           slug: string
+          suitable_bases?: string[]
         }
         Update: {
           allergens?: string[]
@@ -787,6 +862,7 @@ export type Database = {
           name?: string
           seasons?: string[]
           slug?: string
+          suitable_bases?: string[]
         }
         Relationships: []
       }
