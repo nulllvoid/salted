@@ -79,9 +79,19 @@ The query lives in the app (`app/src/hooks/use-grocery-list.ts`) and is specifie
 
 `use-streak.ts:33` walks backward by date assuming one poll per day. A day counts as unbroken if **any** meal dispatched — this preserves exactly today's behavior for single-meal groups and avoids punishing a group for skipping breakfast.
 
+## Observability gap worth closing here
+
+Found while shipping part 1: `create_poll` failed for a flat on every run for several minutes while still returning `{"processed":1,"failures":0}`. The per-flat error was caught, written to `pipeline_errors`, and then not counted — so the HTTP response looked healthy while the pipeline was down, and `pipeline_errors.detail` recorded only `"[object Object]"` because the error object was stringified rather than serialized.
+
+Two small fixes belong in this part, since it is already rewriting all three functions:
+- Count caught per-flat errors in the `failures` tally so the response body reflects reality.
+- Serialize the error properly (`message`/`code`/`details`) instead of `String(err)`, so `pipeline_errors.detail` is diagnosable.
+
 ## Verification
 
 All three functions have `verify_jwt = false` (`supabase/config.toml`), so they can be curled directly with no auth header.
+
+**Check `pipeline_errors`, not just the response body** — see the observability gap above; a green response proves nothing on its own.
 
 - Seed a test flat with two meals: breakfast (opens previous evening, locks 07:00) and dinner (opens 09:00, locks 16:00).
 - **create_poll**: invoke at a simulated tick matching breakfast's open moment; confirm exactly one poll row appears with `poll_date` = *tomorrow* and the breakfast `flat_meal_id`. Re-invoke the same tick and confirm no duplicate (idempotency through the new constraint). Confirm breakfast and dinner polls on the same date have **different** suggestion sets (the seed fix).

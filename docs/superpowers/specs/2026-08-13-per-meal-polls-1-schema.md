@@ -1,8 +1,14 @@
 # Per-meal polls, part 1 — schema and migration
 
-**Date:** 2026-08-13 · **Status:** approved (design reviewed in session) · **Scope:** database only. No Edge Function or app changes; both keep working against the migrated schema unchanged.
+**Date:** 2026-08-13 · **Status:** shipped 2026-08-13 · **Scope:** the schema migration, plus the minimum writer changes the new NOT NULL columns force.
 
-Part 1 of 3. Part 2 is the daily pipeline (Edge Functions), part 3 is the app UI and recipe curation. Each part is independently shippable: after this one lands, the existing single-poll pipeline still runs correctly against the new tables.
+Part 1 of 3. Part 2 is the daily pipeline (Edge Functions), part 3 is the app UI and recipe curation.
+
+> **Correction (found during implementation).** This spec originally claimed part 1 was "database only — no Edge Function or app changes". That was wrong. `daily_polls.flat_meal_id` and `day_attendance.flat_meal_id` are `NOT NULL`, so every writer breaks the moment the migration lands:
+> - `create_poll` inserted without `flat_meal_id` and failed on **every run** until fixed — verified against the live project via `pipeline_errors`.
+> - `use-today-cart.ts`'s out-toggle and `use-attendance.ts`'s `setMemberOut` upserted `day_attendance` without it.
+>
+> Each was changed to resolve the flat's **first active meal**, which the backfill guarantees exists. That preserves exactly one poll per flat per day, so the *behavior* claim holds — but it is not achieved by leaving the code alone. A NOT NULL column added to a table with live writers is never a schema-only change.
 
 ## Goal
 
@@ -149,4 +155,4 @@ Guard: any flat whose `poll_open_time` is later than 20:30 would produce a negat
   - Every `flat_meals` row's derived open moment is before its `close_time`, and `close_time` before `serve_time`.
 - Insert a second `flat_meals` row for a test flat and confirm two same-date `daily_polls` rows can coexist (the constraint swap actually took effect).
 - Confirm the existing app still loads: `use-today-cart.ts` does `.maybeSingle()` on `(flat_id, poll_date)` and **will throw once a flat has two polls on one date** — so during part 1, test flats must keep exactly one meal. This is the first thing part 3 fixes, and is the reason part 3 must land before any group is given a second meal in production.
-- Run the three Edge Functions manually (`verify_jwt = false`, curl directly) and confirm they still create/close/dispatch correctly against the migrated schema.
+- Run the three Edge Functions manually (`verify_jwt = false`, curl directly) and confirm they still create/close/dispatch correctly against the migrated schema. **`create_poll` needs its `flat_meal_id` fix deployed first** (see the correction above) — otherwise it fails silently on every run, logging to `pipeline_errors` while still reporting `failures: 0` at the HTTP layer, because the per-flat error is swallowed. Check `pipeline_errors`, not the response body, when verifying this function.
