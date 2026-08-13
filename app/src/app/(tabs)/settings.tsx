@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CollapsibleSection } from '@/components/collapsible-section';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
@@ -28,6 +29,10 @@ const COOK_LANGUAGES = [
 
 const DEFAULT_MAX_MAINS = 4;
 const DEFAULT_MAX_ACCOMPANIMENTS = 2;
+
+function cookLanguageLabel(value: string): string {
+  return COOK_LANGUAGES.find((lang) => lang.value === value)?.label ?? value;
+}
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -129,7 +134,9 @@ export default function SettingsScreen() {
           </ThemedView>
         </ThemedView>
 
-        <ThemedText type="smallBold">My groups</ThemedText>
+        <ThemedText type="smallBold" style={styles.groupsLabel}>
+          My groups
+        </ThemedText>
         {groups?.map((group) => (
           <GroupCard key={group.id} group={group} userId={session?.user.id} />
         ))}
@@ -250,14 +257,18 @@ function GroupCard({ group, userId }: { group: GroupSummary; userId: string | un
         Members: {members.map((m) => m.displayName).join(', ')}
       </ThemedText>
 
-      <PollTimesSection
-        key={`${flat.poll_open_time}-${flat.poll_close_time}-${flat.dispatch_time}`}
-        pollOpenTime={flat.poll_open_time}
-        pollCloseTime={flat.poll_close_time}
-        dispatchTime={flat.dispatch_time}
-        status={pollTimesStatus}
-        onSave={savePollTimes}
-      />
+      <CollapsibleSection
+        title="Poll times"
+        summary={`${toHHMM(flat.poll_open_time)} · ${toHHMM(flat.poll_close_time)} · ${toHHMM(flat.dispatch_time)}`}>
+        <PollTimesSection
+          key={`${flat.poll_open_time}-${flat.poll_close_time}-${flat.dispatch_time}`}
+          pollOpenTime={flat.poll_open_time}
+          pollCloseTime={flat.poll_close_time}
+          dispatchTime={flat.dispatch_time}
+          status={pollTimesStatus}
+          onSave={savePollTimes}
+        />
+      </CollapsibleSection>
 
       <LimitStepper
         label="Main courses per meal"
@@ -272,7 +283,9 @@ function GroupCard({ group, userId }: { group: GroupSummary; userId: string | un
         accentColor={theme.accent}
       />
 
-      <CookSection key={cook?.id ?? 'new'} cook={cook} onSave={(patch) => upsertCook(patch)} />
+      <CollapsibleSection title="Cook" summary={cook ? `${cook.name} · ${cookLanguageLabel(cook.language)}` : 'Not set'}>
+        <CookSection key={cook?.id ?? 'new'} cook={cook} onSave={(patch) => upsertCook(patch)} />
+      </CollapsibleSection>
 
       {!confirmLeave ? (
         <Pressable onPress={() => setConfirmLeave(true)}>
@@ -569,6 +582,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     gap: Spacing.two,
   },
+  groupsLabel: {
+    marginTop: Spacing.two,
+  },
   cookSection: {
     gap: Spacing.two,
     backgroundColor: 'transparent',
@@ -650,6 +666,11 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     borderRadius: Radius.pill,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   secondaryButton: {
     paddingVertical: Spacing.three,
@@ -669,5 +690,6 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontFamily: Fonts.bodyBold,
+    fontSize: 16,
   },
 });

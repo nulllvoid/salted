@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CollapsibleSection } from '@/components/collapsible-section';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
@@ -341,13 +342,11 @@ function activityLine(entry: ActivityEntry): string {
 }
 
 function ActivityFeed({ entries, accentColor }: { entries: ActivityEntry[]; accentColor: string }) {
+  const shown = entries.slice(0, 8);
   return (
-    <ThemedView style={styles.section}>
-      <ThemedText type="small" themeColor="textSecondary">
-        Who did what
-      </ThemedText>
+    <CollapsibleSection title="Who did what" summary={`${shown.length} update${shown.length === 1 ? '' : 's'}`}>
       <ThemedView style={styles.activityList}>
-        {entries.slice(0, 8).map((entry) => (
+        {shown.map((entry) => (
           <ThemedView key={entry.id} style={styles.activityRow}>
             <ThemedView style={[styles.activityDot, { backgroundColor: accentColor }]} />
             <ThemedView style={styles.activityTextCol}>
@@ -360,7 +359,7 @@ function ActivityFeed({ entries, accentColor }: { entries: ActivityEntry[]; acce
           </ThemedView>
         ))}
       </ThemedView>
-    </ThemedView>
+    </CollapsibleSection>
   );
 }
 
