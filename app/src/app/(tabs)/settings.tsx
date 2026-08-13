@@ -283,7 +283,13 @@ function GroupCard({ group, userId }: { group: GroupSummary; userId: string | un
         accentColor={theme.accent}
       />
 
-      <CollapsibleSection title="Cook" summary={cook ? `${cook.name} · ${cookLanguageLabel(cook.language)}` : 'Not set'}>
+      {/* Open by default until a cook exists: a group can't be dispatched to
+          without one, so hiding the empty form behind a tap buries the single
+          most important thing a new group still has to do. */}
+      <CollapsibleSection
+        title="Cook"
+        summary={cook ? `${cook.name} · ${cookLanguageLabel(cook.language)}` : 'Not set'}
+        defaultOpen={!cook}>
         <CookSection key={cook?.id ?? 'new'} cook={cook} onSave={(patch) => upsertCook(patch)} />
       </CollapsibleSection>
 
