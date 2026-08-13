@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/auth';
 import { dbQuery } from '../fixtures/db';
-import { TEST_USERS } from '../fixtures/test-users';
+import { TEST_FLAT_ID, TEST_USERS } from '../fixtures/test-users';
 
 // Settings (app/src/app/(tabs)/settings.tsx) was a fully static placeholder
 // before this session — every assertion here targets real Supabase reads
@@ -56,9 +56,26 @@ test.describe('Settings', () => {
   });
 
   test('adding a cook persists to cooks table and updates the button label', async ({ ownerPage }) => {
+    // This test asserts the no-cook starting state ("Add cook"). Both
+    // grocery-and-dispatch.spec.ts and a prior run of this very test can
+    // leave an active cook behind, so clear it rather than depend on suite
+    // order — then reload, because the fixture opened this page before the
+    // delete and the app reads cooks once on load.
+    dbQuery(`delete from cooks where flat_id = '${TEST_FLAT_ID}';`);
+    await ownerPage.reload();
+
     await ownerPage.getByRole('tab', { name: 'Settings' }).click();
 
+    // The cook section collapses once a cook exists; expand it if this run
+    // started with one. With no cook it is already open (settings.tsx passes
+    // defaultOpen={!cook}), so the click is conditional rather than
+    // unconditional -- clicking an open section would close it.
+    const cookHeader = ownerPage.getByText('Cook', { exact: true });
     const nameInput = ownerPage.locator('input[placeholder="Cook name"]');
+    if ((await nameInput.count()) === 0) {
+      await cookHeader.click();
+    }
+
     const phoneInput = ownerPage.locator('input[placeholder="Phone (+91XXXXXXXXXX)"]');
     await nameInput.fill('E2E Test Cook');
     await phoneInput.fill('+919999999999');
@@ -71,7 +88,7 @@ test.describe('Settings', () => {
     await expect(ownerPage.getByText('Update cook', { exact: true })).toBeVisible();
 
     const rows = dbQuery(
-      `select name, phone, language from cooks where flat_id = 'b584e7a0-2da7-4e46-8ab2-2ddebf20704b' and is_active = true;`
+      `select name, phone, language from cooks where flat_id = '${TEST_FLAT_ID}' and is_active = true;`
     ) as { name: string; phone: string; language: string }[];
     expect(rows[0].name).toBe('E2E Test Cook');
     expect(rows[0].phone).toBe('+919999999999');
