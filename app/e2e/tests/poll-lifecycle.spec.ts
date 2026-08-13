@@ -102,10 +102,15 @@ test.describe('Poll lifecycle: locking the cart', () => {
     seedOpenPoll(['palak-paneer', 'dal-tadka']);
 
     dbQuery(`
-      insert into day_attendance (flat_id, user_id, poll_date, is_out)
-      select '${TEST_FLAT_ID}', user_id, (select poll_date from daily_polls where flat_id = '${TEST_FLAT_ID}' order by poll_date desc limit 1), true
-      from flat_members where flat_id = '${TEST_FLAT_ID}'
-      on conflict (flat_id, user_id, poll_date) do update set is_out = true;
+      insert into day_attendance (flat_id, flat_meal_id, user_id, poll_date, is_out)
+      select '${TEST_FLAT_ID}', dp.flat_meal_id, fm.user_id, dp.poll_date, true
+      from flat_members fm
+      cross join (
+        select flat_meal_id, poll_date from daily_polls
+        where flat_id = '${TEST_FLAT_ID}' order by poll_date desc limit 1
+      ) dp
+      where fm.flat_id = '${TEST_FLAT_ID}'
+      on conflict (flat_id, user_id, poll_date, flat_meal_id) do update set is_out = true;
     `);
 
     await triggerClosePoll();
