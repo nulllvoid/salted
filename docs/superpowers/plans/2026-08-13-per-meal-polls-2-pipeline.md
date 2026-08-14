@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Live project.** Ref `pcmtsfcjzoivagpslpch`. There is no local/mock Supabase in this workflow. Every deploy is to production; the 7 real flats below run on it.
-- **pg_cron is unchanged.** `supabase/migrations/20260108000003_pg_cron.sql` fires all three functions every 15 minutes unconditionally. The `isWithinCronWindow` default of **15 minutes must stay matched to that interval** — changing one without the other creates either gaps or double-fires.
+- **pg_cron is unchanged.** `supabase/migrations/20260108000003_pg_cron.sql` fires all three functions every 15 minutes unconditionally. After this part the functions latch on "is this due yet and not yet done" rather than "does this tick contain the target time" (Task 1), so the cron interval no longer has to be kept in lockstep with a window constant — a shorter or longer interval changes only how promptly work is picked up. `isWithinCronWindow`'s 15-minute default still backs the regression test pinning old and new behaviour together, so leave it at 15.
 - **All 7 live flats have exactly one `Dinner` meal** (`basis='full'`, `serve_time=20:30`, `open_offset_min=690`, `dispatch_offset_min=270`, `close_time` per-flat). Verified: for all 7, `poll_open_time = serve_time - open_offset_min`, `poll_close_time = close_time`, and `dispatch_time = serve_time - dispatch_offset_min`. **This is the regression baseline** — after this change every one of those flats must still open, close and dispatch at exactly the same wall-clock times.
 - **No app changes in this part.** `app/` is untouched. Part 3 owns the UI.
 - **`flats.poll_open_time` / `poll_close_time` / `dispatch_time` are not dropped here.** They stay as the app still reads them until part 3. This part simply stops the *functions* reading them.
@@ -33,7 +33,7 @@
 - `supabase/functions/_shared/flat-meals.ts` — the shared "which meals are due this tick" query + row type, used by all three functions.
 
 **Modified:**
-- `supabase/functions/_shared/ist-time.ts` — add `eventMomentIst`, `istDateStringOffset`, `isMomentInCronWindow`.
+- `supabase/functions/_shared/ist-time.ts` — add `eventMomentIst`, `istDateStringOffset`, `isMomentInCronWindow`, `isMomentDue`.
 - `supabase/functions/_shared/pipeline-errors.ts` — add `serializeError`.
 - `supabase/functions/create_poll/index.ts` — iterate meals; basis-scoped pool and exclusion; candidate serving dates.
 - `supabase/functions/create_poll/select-options.ts` — meal id in the RNG seed; basis-aware pool filter.
@@ -49,6 +49,10 @@
 
 The whole feature rests on this arithmetic. A meal served 20:30 tomorrow with `open_offset_min = 690` opens at 09:00 **today** — the offset may exceed 1440 and cross midnight, which is precisely the case that must not be special-cased.
 
+This task also replaces window matching with a **due latch** across all three functions. Each currently fires only during the single 15-minute tick containing its target time, so any missed tick silently loses that stage for the whole day. Two ways that happens in practice: a cron run that fails or is delayed, and a flat editing its poll time to a moment the current tick has already passed (set 09:00 to 09:10 at 09:20 and no later tick can ever match).
+
+The latch is only safe because each stage already has an idempotent "already done" check — `create_poll`'s unique `(flat_id, poll_date, flat_meal_id)` probe, `close_poll`'s `status = 'open'` filter, `dispatch_cook`'s `'closed' → 'dispatched'` transition. Each also gets an upper bound so catch-up can't fire something uselessly late: `create_poll` skips a poll already past its close time, `dispatch_cook` uses a 45-minute grace and never dispatches past the serve time.
+
 **Files:**
 - Modify: `supabase/functions/_shared/ist-time.ts`
 - Create: `app/e2e/unit/playwright.config.ts`
@@ -59,7 +63,8 @@ The whole feature rests on this arithmetic. A meal served 20:30 tomorrow with `o
 - Produces:
   - `eventMomentIst(serveDate: string, serveTime: string, offsetMin: number): Date` — the IST moment `offsetMin` minutes before `serveTime` on `serveDate`. Returned as a `Date` whose **UTC fields carry IST wall-clock**, matching the existing convention set by `nowInIst()`.
   - `istDateStringOffset(nowIst: Date, dayOffset: number): string` — `YYYY-MM-DD` for today (`0`) or tomorrow (`1`).
-  - `isMomentInCronWindow(moment: Date, nowIst: Date, windowMinutes?: number): boolean` — true when `moment` falls in `[nowIst, nowIst + windowMinutes)`. Compares absolute moments, unlike `isWithinCronWindow` which compares time-of-day only.
+  - `isMomentInCronWindow(moment: Date, nowIst: Date, windowMinutes?: number): boolean` — true when `moment` falls in `[nowIst, nowIst + windowMinutes)`. Compares absolute moments, unlike `isWithinCronWindow` which compares time-of-day only. Kept for the tests that pin the two helpers' agreement; the functions themselves use `isMomentDue`.
+  - `isMomentDue(moment: Date, nowIst: Date, graceMinutes?: number): boolean` — true from `moment` until `graceMinutes` after it (default 24h). The latch: survives a missed tick, and is safe to re-run because callers pair it with their own already-done check.
 
 - [ ] **Step 1: Create the unit-test Playwright project**
 
@@ -99,6 +104,7 @@ import { test, expect } from '@playwright/test';
 import {
   eventMomentIst,
   istDateStringOffset,
+  isMomentDue,
   isMomentInCronWindow,
   isWithinCronWindow,
 } from '../../../supabase/functions/_shared/ist-time.ts';
@@ -174,13 +180,37 @@ test('isMomentInCronWindow matches isWithinCronWindow for a same-day event', () 
   expect(isMomentInCronWindow(moment, now)).toBe(isWithinCronWindow('09:00:00', now));
   expect(isMomentInCronWindow(moment, now)).toBe(true);
 });
+
+test('isMomentDue stays true after the tick that window matching would miss', () => {
+  // The whole point of the latch. A poll time edited from 09:00 to 09:10 at
+  // 09:20 leaves an open moment that no future 15-minute tick can match,
+  // so window matching drops the poll for the entire day.
+  const moment = ist(2026, 8, 13, 9, 10);
+  const nextTick = ist(2026, 8, 13, 9, 30);
+  expect(isMomentInCronWindow(moment, nextTick)).toBe(false);
+  expect(isMomentDue(moment, nextTick)).toBe(true);
+});
+
+test('isMomentDue is false before the moment arrives', () => {
+  const moment = ist(2026, 8, 13, 9, 0);
+  expect(isMomentDue(moment, ist(2026, 8, 13, 8, 59))).toBe(false);
+  expect(isMomentDue(moment, ist(2026, 8, 13, 9, 0))).toBe(true);
+});
+
+test('isMomentDue abandons an event older than the grace period', () => {
+  // Bounds catch-up: a function coming back after a long outage must not
+  // fire events from previous days.
+  const moment = ist(2026, 8, 13, 9, 0);
+  expect(isMomentDue(moment, ist(2026, 8, 13, 23, 59))).toBe(true);
+  expect(isMomentDue(moment, ist(2026, 8, 14, 9, 1))).toBe(false);
+});
 ```
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run from `/app`: `npm run test:unit`
 
-Expected: FAIL — `eventMomentIst is not a function` (and the same for the other two new exports). The two assertions using only `isWithinCronWindow` should already pass.
+Expected: FAIL — `eventMomentIst is not a function` (and the same for the other three new exports). The two assertions using only `isWithinCronWindow` should already pass.
 
 - [ ] **Step 4: Implement the helpers**
 
@@ -217,13 +247,36 @@ export function isMomentInCronWindow(moment: Date, nowIst: Date, windowMinutes =
   const delta = moment.getTime() - nowIst.getTime();
   return delta >= 0 && delta < windowMinutes * 60_000;
 }
+
+// True once `moment` has arrived and for the rest of the serving window —
+// "is this due yet?" rather than "is this due in exactly this tick?".
+//
+// Window matching loses work whenever the single matching tick is missed:
+// a failed or delayed cron run, or a flat whose poll time is edited past
+// the current window (change 09:00 to 09:10 at 09:20 and no tick ever
+// matches again — that flat gets no poll at all that day). Callers pair
+// this with their own already-done check — create_poll's existing
+// (flat_id, poll_date, flat_meal_id) probe, dispatch_cook's poll status —
+// so the latch is idempotent: due-and-not-done runs, due-and-done no-ops.
+//
+// `graceMinutes` bounds how stale an event may be before it is abandoned.
+// Without it, a function restarted after a long outage would fire events
+// from days ago; the default covers a same-day catch-up but not more.
+export function isMomentDue(
+  moment: Date,
+  nowIst: Date,
+  graceMinutes = 24 * 60
+): boolean {
+  const elapsed = nowIst.getTime() - moment.getTime();
+  return elapsed >= 0 && elapsed < graceMinutes * 60_000;
+}
 ```
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run from `/app`: `npm run test:unit`
 
-Expected: PASS, 10 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -610,7 +663,7 @@ git commit -m "Share the active-meals query and serialize pipeline errors proper
 - Modify: `supabase/functions/create_poll/index.ts`
 
 **Interfaces:**
-- Consumes: `fetchActiveFlatMeals`, `FlatMealRow` (Task 3); `eventMomentIst`, `istDateStringOffset`, `isMomentInCronWindow` (Task 1); `selectPollOptions` with `flatMealId`/`basis` (Task 2); `serializeError` (Task 3).
+- Consumes: `fetchActiveFlatMeals`, `FlatMealRow` (Task 3); `eventMomentIst`, `istDateStringOffset`, `isMomentDue` (Task 1); `selectPollOptions` with `flatMealId`/`basis` (Task 2); `serializeError` (Task 3).
 
 - [ ] **Step 1: Rewrite the request handler**
 
@@ -622,7 +675,7 @@ import { createAdminClient } from '../_shared/supabase-admin.ts';
 import {
   eventMomentIst,
   istDateStringOffset,
-  isMomentInCronWindow,
+  isMomentDue,
   nowInIst,
 } from '../_shared/ist-time.ts';
 import { fetchActiveFlatMeals, type FlatMealRow } from '../_shared/flat-meals.ts';
@@ -655,12 +708,25 @@ Deno.serve(async (_req) => {
   // Each (meal, serving date) pair is scheduled independently: the open
   // moment is computed backwards from the serve time, so a breakfast served
   // tomorrow can open this evening.
+  //
+  // isMomentDue, not isMomentInCronWindow: a poll whose open moment was
+  // missed by its one matching tick — a failed cron run, or a poll time
+  // edited past the current window — must still be created on a later tick
+  // rather than lost for the day. createPollForMeal's existing
+  // (flat_id, poll_date, flat_meal_id) probe makes the repeat a no-op.
   const due: { meal: FlatMealRow; pollDate: string }[] = [];
   for (const meal of meals) {
     for (const dayOffset of CANDIDATE_DAY_OFFSETS) {
       const pollDate = istDateStringOffset(nowIst, dayOffset);
       const openMoment = eventMomentIst(pollDate, meal.serve_time, meal.open_offset_min);
-      if (isMomentInCronWindow(openMoment, nowIst)) due.push({ meal, pollDate });
+      if (!isMomentDue(openMoment, nowIst)) continue;
+      // Never open a cart that is already past its own close time — catching
+      // up after a long outage must not produce a poll nobody can use and
+      // close_poll's window will never match. This bounds the latch far more
+      // tightly than graceMinutes does for a meal closing the same day.
+      const closeMoment = eventMomentIst(pollDate, meal.close_time, 0);
+      if (nowIst.getTime() >= closeMoment.getTime()) continue;
+      due.push({ meal, pollDate });
     }
   }
 
@@ -957,11 +1023,13 @@ The current `.order('poll_date').limit(1)` is a **tie** when two polls share a d
 - Modify: `supabase/functions/close_poll/index.ts`
 
 **Interfaces:**
-- Consumes: `fetchActiveFlatMeals`, `FlatMealRow`, `serializeError`, `isWithinCronWindow`, `istDateString`, `nowInIst`.
+- Consumes: `fetchActiveFlatMeals`, `FlatMealRow`, `serializeError`, `eventMomentIst`, `isMomentDue`, `istDateString`, `nowInIst`.
 
 - [ ] **Step 1: Rewrite the function**
 
-`close_time` is an absolute wall-clock time on the serving date, so unlike the other two functions this one only ever tests today — no candidate-date loop, and `isWithinCronWindow` (time-of-day comparison) remains the right helper.
+`close_time` is an absolute wall-clock time on the serving date, so unlike the other two functions this one only ever tests today — no candidate-date loop.
+
+It still latches. A cart that misses its one closing tick stays open past its deadline, editable indefinitely, and `dispatch_cook` only acts on a `'closed'` poll — so the cook gets nothing. Latching here is the safest of the three: closing is idempotent (the update is scoped to `status = 'open'`), and a late close is strictly better than none. Because only today is in scope, the moment is built with `eventMomentIst(todayIst, meal.close_time, 0)` and compared with `isMomentDue`, replacing `isWithinCronWindow` — the time-of-day helper cannot express "already past".
 
 ```ts
 // close_poll — runs every 15 min via pg_cron; for each ACTIVE MEAL whose
@@ -975,7 +1043,7 @@ The current `.order('poll_date').limit(1)` is a **tie** when two polls share a d
 // time on the serving date rather than an offset, so only today is ever due.
 
 import { createAdminClient } from '../_shared/supabase-admin.ts';
-import { istDateString, isWithinCronWindow, nowInIst } from '../_shared/ist-time.ts';
+import { eventMomentIst, istDateString, isMomentDue, nowInIst } from '../_shared/ist-time.ts';
 import { fetchActiveFlatMeals, type FlatMealRow } from '../_shared/flat-meals.ts';
 import { logPipelineError, serializeError } from '../_shared/pipeline-errors.ts';
 
@@ -992,7 +1060,12 @@ Deno.serve(async (_req) => {
     return new Response(JSON.stringify({ error: serializeError(err).message }), { status: 500 });
   }
 
-  const due = meals.filter((meal) => isWithinCronWindow(meal.close_time, nowIst));
+  // Latched, not window-matched: a cart that misses its closing tick would
+  // otherwise stay open indefinitely and never dispatch. closePollForMeal
+  // scopes its update to status = 'open', so re-running is a no-op.
+  const due = meals.filter((meal) =>
+    isMomentDue(eventMomentIst(pollDate, meal.close_time, 0), nowIst)
+  );
 
   const results = await Promise.all(due.map((meal) => closePollForMeal(admin, meal, pollDate)));
 
@@ -1122,7 +1195,7 @@ Two messages a day that both open `"Today's meal:"` are actively confusing.
 - Modify: `supabase/functions/dispatch_cook/compose-payload.ts`
 
 **Interfaces:**
-- Consumes: `fetchActiveFlatMeals`, `FlatMealRow`, `serializeError`, `eventMomentIst`, `istDateStringOffset`, `isMomentInCronWindow`.
+- Consumes: `fetchActiveFlatMeals`, `FlatMealRow`, `serializeError`, `eventMomentIst`, `istDateStringOffset`, `isMomentDue`.
 - Produces: `composeEnglishPayload` gains a required `meal: { name: string; serveTime: string }` param; new exported `formatServeTime(serveTime: string): string` and `composeMealHeading(mealName: string, serveTime: string, pollDate: string, todayIst: string): string`.
 
 - [ ] **Step 1: Write the failing tests for the message heading**
@@ -1267,7 +1340,17 @@ Expected: PASS, 21 tests total.
 
 - [ ] **Step 5: Rewrite `dispatch_cook/index.ts`**
 
-Imports gain the same helpers as `create_poll`, plus `CANDIDATE_DAY_OFFSETS`. The handler:
+Imports gain the same helpers as `create_poll` (`eventMomentIst`, `istDateStringOffset`, `isMomentDue`, `istDateString`, `nowInIst`), plus its own `CANDIDATE_DAY_OFFSETS` and grace constant:
+
+```ts
+// A late dispatch is worse than a missed one — the cook may have already
+// shopped or started — so catch-up is bounded to roughly two ticks rather
+// than isMomentDue's 24h default. Long enough to survive a single failed
+// cron run, short enough that nothing arrives meaningfully late.
+const DISPATCH_GRACE_MINUTES = 45;
+```
+
+The handler:
 
 ```ts
 Deno.serve(async (_req) => {
@@ -1289,7 +1372,15 @@ Deno.serve(async (_req) => {
     for (const dayOffset of CANDIDATE_DAY_OFFSETS) {
       const pollDate = istDateStringOffset(nowIst, dayOffset);
       const dispatchMoment = eventMomentIst(pollDate, meal.serve_time, meal.dispatch_offset_min);
-      if (isMomentInCronWindow(dispatchMoment, nowIst)) due.push({ meal, pollDate });
+      // Latched like create_poll so a missed tick still reaches the cook, but
+      // with a far shorter grace: a message arriving hours late is worse than
+      // none, because the cook may have already shopped or started. Never
+      // dispatch past the serve time itself. dispatchForMeal only acts on a
+      // 'closed' poll and flips it to 'dispatched', so the repeat is a no-op.
+      if (!isMomentDue(dispatchMoment, nowIst, DISPATCH_GRACE_MINUTES)) continue;
+      const serveMoment = eventMomentIst(pollDate, meal.serve_time, 0);
+      if (nowIst.getTime() >= serveMoment.getTime()) continue;
+      due.push({ meal, pollDate });
     }
   }
 
@@ -1470,7 +1561,27 @@ Expected: no rows from any of the three stages. Also confirm today's polls exist
 npx supabase db query --linked "select f.name, m.name as meal, p.status, p.poll_date from flats f join flat_meals m on m.flat_id = f.id left join daily_polls p on p.flat_id = f.id and p.flat_meal_id = m.id and p.poll_date = (now() at time zone 'Asia/Kolkata')::date order by f.name;"
 ```
 
-- [ ] **Step 4: Correct the stale line in `CLAUDE.md`**
+- [ ] **Step 4: Prove an edited poll time takes effect the same day**
+
+The latch's user-visible purpose. Before this part, moving a meal's open time to a moment the current tick had already passed meant no poll was created that day at all.
+
+Pick a test flat (never one of the live pilot flats) and set its open moment a few minutes in the past, so no future 15-minute window can contain it:
+
+```bash
+npx supabase db query --linked "update flat_meals set open_offset_min = (extract(epoch from (serve_time - (now() at time zone 'Asia/Kolkata')::time)) / 60)::int + 5 where flat_id = '<test-flat-id>' returning id, serve_time, open_offset_min;"
+```
+
+Delete any poll already created for that meal today, then invoke the function directly:
+
+```bash
+curl -s -X POST https://pcmtsfcjzoivagpslpch.supabase.co/functions/v1/create_poll
+```
+
+Expected: a `daily_polls` row now exists for that meal and date. Under the old window matching this produced nothing, because the open moment sat between ticks. Re-run the same curl and confirm the row is unchanged — the latch must be idempotent, not create a second poll.
+
+Restore the test flat's original `open_offset_min` afterwards.
+
+- [ ] **Step 5: Correct the stale line in `CLAUDE.md`**
 
 It currently reads `- No test runner is configured yet.` under the `/app` commands, which is no longer true and misleads the next session into skipping verification. Replace with:
 
@@ -1481,7 +1592,7 @@ It currently reads `- No test runner is configured yet.` under the `/app` comman
 
 Also update the repo-status paragraph, which still describes the pipeline as per-flat. Change the `/supabase` sentence to note that all three functions now iterate `flat_meals` and schedule each meal independently, and that `flats.poll_open_time`/`poll_close_time`/`dispatch_time` are still read by the app but no longer by the pipeline (part 3 removes them).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add CLAUDE.md
