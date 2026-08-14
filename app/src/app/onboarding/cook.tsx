@@ -35,7 +35,7 @@ export default function OnboardingCookScreen() {
   const [cookLanguage, setCookLanguage] = useState<'hi' | 'kn' | 'en'>('hi');
   const [copied, setCopied] = useState(false);
 
-  // Share the raw code, not a flatmeal.app/j/ URL — the deep link isn't live
+  // Share the raw code, not a salted.app/j/ URL — the deep link isn't live
   // yet and a dead link in the first minute costs trust.
   const inviteCode = flatData?.flat.invite_code ?? '';
 

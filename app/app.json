@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "FlatMeal",
-    "slug": "flatmeal",
+    "name": "Salted",
+    "slug": "salted",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "flatmeal",
+    "scheme": "salted",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"

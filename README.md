@@ -1,4 +1,4 @@
-# FlatMeal (working name)
+# Salted
 
 A low-friction meal-planning app for shared households (flatmates) in Indian metros that employ a daily domestic cook.
 
