@@ -34,6 +34,26 @@ function cookLanguageLabel(value: string): string {
   return COOK_LANGUAGES.find((lang) => lang.value === value)?.label ?? value;
 }
 
+// pg_cron invokes the pipeline every 15 minutes, so a poll-time edit would
+// otherwise sit idle until the next tick — long enough that a flat moving
+// today's open time to "a few minutes from now" appears to do nothing.
+// Nudging all three covers the case where a single save moves several times
+// at once, and each function self-selects what is actually due, so the ones
+// with nothing to do return immediately.
+//
+// Deliberately fire-and-forget: the save has already succeeded and the next
+// cron tick is a complete fallback, so a failed nudge must never surface as
+// a failed save. Failures are logged for debugging and otherwise swallowed.
+const PIPELINE_FUNCTIONS = ['create_poll', 'close_poll', 'dispatch_cook'] as const;
+
+function nudgePipeline() {
+  for (const fn of PIPELINE_FUNCTIONS) {
+    void supabase.functions
+      .invoke(fn)
+      .catch((err) => console.warn(`[settings] ${fn} nudge failed`, err));
+  }
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
   const session = useSession();
@@ -223,6 +243,9 @@ function GroupCard({ group, userId }: { group: GroupSummary; userId: string | un
     setPollTimesStatus('saving');
     const result = await updateFlat(patch);
     setPollTimesStatus(result?.error ? 'error' : 'saved');
+    // Only on a successful write — nudging after a failed save would run the
+    // pipeline against the old times and imply the edit took effect.
+    if (!result?.error) nudgePipeline();
     setTimeout(() => setPollTimesStatus('idle'), 3000);
   }
 
