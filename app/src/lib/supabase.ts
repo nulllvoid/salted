@@ -5,6 +5,12 @@ import 'react-native-url-polyfill/auto';
 
 import type { Database } from '@/types/database';
 
+import { polyfillCrypto } from './crypto-polyfill';
+
+// Must run before any auth call: without a `crypto.subtle`, auth-js quietly
+// downgrades the PKCE challenge to `plain`. See ./crypto-polyfill.ts.
+polyfillCrypto();
+
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -31,8 +37,13 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     storage: authStorage,
     autoRefreshToken: true,
     persistSession: true,
-    // Email magic links redirect back with the session token in the URL —
-    // only meaningful on web; native has no browser URL to inspect.
+    // OAuth redirects back with the session token in the URL — only
+    // meaningful on web; on native the auth sheet hands the URL back to us
+    // directly and we exchange the code ourselves.
     detectSessionInUrl: Platform.OS === 'web',
+    // PKCE is required for the native flow: signInWithOAuth returns a `code`
+    // that we exchange via exchangeCodeForSession. The implicit flow returns
+    // tokens in a URL fragment, which never reaches native.
+    flowType: 'pkce',
   },
 });

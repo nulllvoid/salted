@@ -17,8 +17,22 @@ port = 54323
 
 [auth]
 enabled = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = []
+# Expo serves the web build on 8081, not CRA's 3000. This is the fallback
+# Supabase redirects to when an OAuth redirect_to isn't allow-listed below —
+# a wrong value here shows up as a confusing "site can't be reached" at the
+# end of an otherwise-successful sign-in.
+site_url = "http://localhost:8081"
+# OAuth (Google/Apple) redirect targets. `salted://` is the app's scheme
+# (app.json) used by dev/production builds; the `exp://` entries are Expo
+# Go, which owns the scheme itself and serves over the LAN — the IP changes
+# with the network, hence the wildcard alongside the current address.
+additional_redirect_urls = [
+  "salted://",
+  "salted://*",
+  "exp://192.168.1.19:8081",
+  "exp://192.168.1.19:8081/--/*",
+  "http://localhost:8081",
+]
 jwt_expiry = 3600
 enable_signup = true
 

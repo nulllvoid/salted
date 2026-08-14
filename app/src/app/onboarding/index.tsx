@@ -1,6 +1,8 @@
+import { makeRedirectUri } from 'expo-auth-session';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, TextInput } from 'react-native';
+import { Platform, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -11,17 +13,16 @@ import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
 
-// Onboarding step 1, email magic-link variant (docs/02-prd.md §F1 "or magic
-// link fallback"). Phone OTP is blocked on India DLT/SMS-provider setup.
-// Continues into onboarding/profile.tsx (about you), then
-// onboarding/choose.tsx (create or join a group).
-export default function OnboardingEmailScreen() {
+type OAuthProvider = 'google' | 'apple';
+
+// Onboarding step 1, OAuth variant (docs/02-prd.md §F1). Phone OTP is blocked
+// on India DLT/SMS-provider setup. Continues into onboarding/profile.tsx
+// (about you), then onboarding/choose.tsx (create or join a group).
+export default function OnboardingSignInScreen() {
   const router = useRouter();
   const session = useSession();
   const { groups } = useActiveGroup();
-  const [email, setEmail] = useState('');
-  const [linkSent, setLinkSent] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [pending, setPending] = useState<OAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const ensureProfileThenContinue = useCallback(
@@ -41,8 +42,8 @@ export default function OnboardingEmailScreen() {
     [router]
   );
 
-  // On web, clicking the magic link redirects back to this same page with
-  // the session already established (detectSessionInUrl) — pick that up
+  // On web, the OAuth provider redirects back to this same page with the
+  // session already established (detectSessionInUrl) — pick that up
   // and continue into profile creation once it lands. But a returning user
   // who lands here directly (stale bookmark, back-navigation, deep link)
   // with a session AND at least one group already shouldn't be routed
@@ -57,21 +58,39 @@ export default function OnboardingEmailScreen() {
     void Promise.resolve().then(() => ensureProfileThenContinue(session.user.id, session.user.email ?? ''));
   }, [session, groups, ensureProfileThenContinue, router]);
 
-  async function sendMagicLink() {
+  // Native can't use a plain redirect: the system auth sheet has to hand the
+  // callback URL back to us, so we ask Supabase for the URL instead of
+  // navigating (skipBrowserRedirect), open it ourselves, then exchange the
+  // returned `code` for a session (PKCE — see src/lib/supabase.ts). On web
+  // the redirect is the normal one and detectSessionInUrl finishes the job,
+  // so there's nothing to exchange here.
+  async function signInWith(provider: OAuthProvider) {
     setError(null);
-    setLoading(true);
-    const { error: linkError } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-      },
-    });
-    setLoading(false);
-    if (linkError) {
-      setError(linkError.message);
-      return;
+    setPending(provider);
+    try {
+      const redirectTo = makeRedirectUri();
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo, skipBrowserRedirect: Platform.OS !== 'web' },
+      });
+      if (oauthError) throw oauthError;
+      if (Platform.OS === 'web' || !data?.url) return;
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      // Dismissed/cancelled — not an error worth showing, the user chose to back out.
+      if (result.type !== 'success') return;
+
+      const code = new URL(result.url).searchParams.get('code');
+      if (!code) throw new Error('No authorization code returned. Please try again.');
+
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+      if (exchangeError) throw exchangeError;
+      // The session lands via useSession(); the effect above routes onward.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed. Please try again.');
+    } finally {
+      setPending(null);
     }
-    setLinkSent(true);
   }
 
   const theme = useTheme();
@@ -79,35 +98,37 @@ export default function OnboardingEmailScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ThemedView style={styles.container}>
-        <ThemedText type="title">FlatMeal</ThemedText>
+        <ThemedText type="title">Salted</ThemedText>
         <ThemedText type="default" themeColor="textSecondary">
           Build the next meal in 5 seconds. Your cook gets clear instructions, automatically.
         </ThemedText>
 
-        {!linkSent ? (
-          <>
-            <TextInput
-              placeholder="you@example.com"
-              placeholderTextColor={theme.textSecondary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-              style={[styles.input, { borderColor: theme.divider, color: theme.text, backgroundColor: theme.backgroundElement }]}
-            />
-            <Pressable
-              style={[styles.primaryButton, { backgroundColor: theme.accent }, (loading || !email) && styles.disabled]}
-              onPress={sendMagicLink}
-              disabled={loading || !email}>
-              <ThemedText type="smallBold" style={[styles.primaryButtonText, { color: theme.background }]}>
-                {loading ? 'Sending…' : 'Send magic link'}
-              </ThemedText>
-            </Pressable>
-          </>
-        ) : (
-          <ThemedText type="default" themeColor="textSecondary">
-            Check {email} for a sign-in link, then open it in this browser.
+        <Pressable
+          style={[styles.primaryButton, { backgroundColor: theme.accent }, pending !== null && styles.disabled]}
+          onPress={() => signInWith('google')}
+          disabled={pending !== null}>
+          <ThemedText type="smallBold" style={[styles.primaryButtonText, { color: theme.background }]}>
+            {pending === 'google' ? 'Signing in…' : 'Continue with Google'}
           </ThemedText>
+        </Pressable>
+
+        {/* Apple requires its own sign-in button wherever another social
+            login is offered, but only on iOS — on Android it degrades to a
+            clumsy web flow, so it's hidden there. iOS is out of v1 scope
+            (CLAUDE.md), so this stays dormant until an iOS build happens. */}
+        {Platform.OS === 'ios' && (
+          <Pressable
+            style={[
+              styles.secondaryButton,
+              { borderColor: theme.divider, backgroundColor: theme.backgroundElement },
+              pending !== null && styles.disabled,
+            ]}
+            onPress={() => signInWith('apple')}
+            disabled={pending !== null}>
+            <ThemedText type="smallBold" style={[styles.primaryButtonText, { color: theme.text }]}>
+              {pending === 'apple' ? 'Signing in…' : 'Continue with Apple'}
+            </ThemedText>
+          </Pressable>
         )}
 
         {error && (
@@ -128,18 +149,16 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     gap: Spacing.three,
   },
-  input: {
-    borderWidth: 1.5,
-    borderRadius: Radius.pill,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.four,
-    fontSize: 16,
-    fontFamily: Fonts.body,
-  },
   primaryButton: {
     paddingVertical: Spacing.three,
     borderRadius: Radius.pill,
     alignItems: 'center',
+  },
+  secondaryButton: {
+    paddingVertical: Spacing.three,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    borderWidth: 1.5,
   },
   disabled: {
     opacity: 0.45,
