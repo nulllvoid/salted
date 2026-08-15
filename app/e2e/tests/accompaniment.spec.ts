@@ -109,7 +109,11 @@ test.describe('Accompaniments in the shared cart', () => {
     // composition (composeEnglishPayload) rather than the translated
     // per-dish "For the X:" format — assert on the shared summary line and
     // dish name only, which both compositions produce identically.
-    await expect(ownerPage.getByText("Today's meal: Dal Tadka", { exact: false })).toBeVisible({ timeout: 15000 });
+    // The heading now names the meal and its serve time (part 2) instead of
+    // the meal-neutral "Today's meal:" — a flat with breakfast and dinner
+    // would otherwise send the cook two identically-headed messages.
+    await expect(ownerPage.getByText('Dinner today', { exact: false })).toBeVisible({ timeout: 15000 });
+    await expect(ownerPage.getByText('Dal Tadka', { exact: false }).first()).toBeVisible();
     await expect(ownerPage.getByText('Roti', { exact: false }).first()).toBeVisible();
   });
 

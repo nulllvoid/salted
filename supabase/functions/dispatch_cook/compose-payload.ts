@@ -23,13 +23,42 @@ export interface DishLine {
   ingredients: RecipeIngredientRow[];
 }
 
+// 24h "HH:MM[:SS]" to a 12-hour clock the cook reads at a glance.
+export function formatServeTime(serveTime: string): string {
+  const [hh, mm] = serveTime.split(':').map(Number);
+  const suffix = hh < 12 ? 'am' : 'pm';
+  const hour12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${hour12}:${String(mm).padStart(2, '0')}${suffix}`;
+}
+
+// Names the meal and the day it is for. A flat with two meals gets two
+// messages a day; both opening "Today's meal:" was actively confusing. The
+// day matters because a meal can be dispatched the evening before it is
+// served — breakfast dispatched at 22:00 is for TOMORROW.
+export function composeMealHeading(
+  mealName: string,
+  serveTime: string,
+  pollDate: string,
+  todayIst: string
+): string {
+  const when = pollDate === todayIst ? 'today' : 'tomorrow';
+  return `${mealName} ${when} (${formatServeTime(serveTime)})`;
+}
+
 // In-app preview payload (cook-message-preview screen) — NOT constrained by
 // the WhatsApp template's fixed slots, since it's just displayed text. Full
 // multi-dish block, one section per dish.
-export function composeEnglishPayload(params: { dishes: DishLine[]; flatNote: string | null }): string {
-  const { dishes, flatNote } = params;
+export function composeEnglishPayload(params: {
+  dishes: DishLine[];
+  flatNote: string | null;
+  meal: { name: string; serveTime: string };
+  pollDate: string;
+  todayIst: string;
+}): string {
+  const { dishes, flatNote, meal, pollDate, todayIst } = params;
 
   const dishSummary = dishes.map((d) => `${d.name} (for ${d.quantity})`).join(', ');
+  const heading = composeMealHeading(meal.name, meal.serveTime, pollDate, todayIst);
 
   const dishSections = dishes.map((dish) => {
     const sorted = [...dish.ingredients].sort((a, b) => a.sort_order - b.sort_order);
@@ -49,7 +78,7 @@ export function composeEnglishPayload(params: { dishes: DishLine[]; flatNote: st
   });
 
   return [
-    `Today's meal: ${dishSummary}`,
+    `${heading}: ${dishSummary}`,
     '',
     dishSections.join('\n\n'),
     '',

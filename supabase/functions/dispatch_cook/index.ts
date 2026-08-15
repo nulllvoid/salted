@@ -1,6 +1,8 @@
-// dispatch_cook — runs every 15 min via pg_cron; for each flat whose
-// dispatch_time falls in this window and has a 'closed' poll today,
-// composes and sends the cook's WhatsApp message.
+// dispatch_cook — runs every 15 min via pg_cron; for each ACTIVE MEAL whose
+// dispatch moment (serve_time minus dispatch_offset_min, on a candidate
+// serving date) falls in this window and has a 'closed' poll, composes and
+// sends the cook's WhatsApp message. A flat has one active cook, so a flat
+// with several meals sends that cook one message per meal per day.
 //
 // Pipeline (docs/06-whatsapp-integration.md "Composition pipeline",
 // docs/04-architecture.md "Sequence: dispatch_cook"):
@@ -25,11 +27,19 @@
 //   6. Insert dispatch_log row; wa_webhook updates status afterwards.
 
 import { createAdminClient } from '../_shared/supabase-admin.ts';
-import { isWithinCronWindow, nowInIst } from '../_shared/ist-time.ts';
-import { logPipelineError } from '../_shared/pipeline-errors.ts';
+import {
+  eventMomentIst,
+  istDateString,
+  istDateStringOffset,
+  isMomentDue,
+  nowInIst,
+} from '../_shared/ist-time.ts';
+import { fetchActiveFlatMeals, type FlatMealRow } from '../_shared/flat-meals.ts';
+import { logPipelineError, serializeError } from '../_shared/pipeline-errors.ts';
 import {
   composeEnglishPayload,
   composeIngredientLine,
+  composeMealHeading,
   composeMethodLine,
   type DishLine,
   type RecipeIngredientRow,
@@ -38,50 +48,81 @@ import { translateText } from './translate.ts';
 
 type DispatchMode = 'mock' | 'live';
 
+// A meal can be dispatched the evening before it is served, so today's and
+// tomorrow's servings are both candidates each tick (mirrors create_poll).
+const CANDIDATE_DAY_OFFSETS = [0, 1];
+
+// A late dispatch is worse than a missed one — the cook may have already
+// shopped or started — so catch-up is bounded to roughly two ticks rather
+// than isMomentDue's 24h default. Long enough to survive a single failed
+// cron run, short enough that nothing arrives meaningfully late.
+const DISPATCH_GRACE_MINUTES = 45;
+
 Deno.serve(async (_req) => {
   const admin = createAdminClient();
   const nowIst = nowInIst();
   const dispatchMode = (Deno.env.get('DISPATCH_MODE') as DispatchMode) ?? 'mock';
 
-  const { data: flats, error: flatsError } = await admin
-    .from('flats')
-    .select('id, dispatch_time');
-
-  if (flatsError) {
-    await logPipelineError(admin, 'dispatch_cook', { message: flatsError.message });
-    return new Response(JSON.stringify({ error: flatsError.message }), { status: 500 });
+  let meals: FlatMealRow[];
+  try {
+    meals = await fetchActiveFlatMeals(admin);
+  } catch (err) {
+    await logPipelineError(admin, 'dispatch_cook', serializeError(err));
+    return new Response(JSON.stringify({ error: serializeError(err).message }), { status: 500 });
   }
 
-  const dueFlats = (flats ?? []).filter((flat) => isWithinCronWindow(flat.dispatch_time, nowIst));
+  const todayIst = istDateString(nowIst);
+  const due: { meal: FlatMealRow; pollDate: string }[] = [];
+  for (const meal of meals) {
+    for (const dayOffset of CANDIDATE_DAY_OFFSETS) {
+      const pollDate = istDateStringOffset(nowIst, dayOffset);
+      const dispatchMoment = eventMomentIst(pollDate, meal.serve_time, meal.dispatch_offset_min);
+      // Latched like create_poll so a missed tick still reaches the cook, but
+      // with a far shorter grace: a message arriving hours late is worse than
+      // none, because the cook may have already shopped or started. Never
+      // dispatch past the serve time itself. dispatchForMeal only acts on a
+      // 'closed' poll and flips it to 'dispatched', so the repeat is a no-op.
+      if (!isMomentDue(dispatchMoment, nowIst, DISPATCH_GRACE_MINUTES)) continue;
+      const serveMoment = eventMomentIst(pollDate, meal.serve_time, 0);
+      if (nowIst.getTime() >= serveMoment.getTime()) continue;
+      due.push({ meal, pollDate });
+    }
+  }
 
-  const results = await Promise.allSettled(
-    dueFlats.map((flat) => dispatchForFlat(admin, flat.id, dispatchMode))
+  const results = await Promise.all(
+    due.map(({ meal, pollDate }) => dispatchForMeal(admin, meal, pollDate, todayIst, dispatchMode))
   );
 
-  const failures = results.filter((r) => r.status === 'rejected').length;
+  const failures = results.filter((ok) => !ok).length;
   return new Response(
-    JSON.stringify({ processed: dueFlats.length, failures, mode: dispatchMode }),
+    JSON.stringify({ processed: due.length, failures, mode: dispatchMode }),
     { headers: { 'Content-Type': 'application/json' } }
   );
 });
 
-async function dispatchForFlat(
+async function dispatchForMeal(
   admin: ReturnType<typeof createAdminClient>,
-  flatId: string,
+  meal: FlatMealRow,
+  pollDate: string,
+  todayIst: string,
   mode: DispatchMode
-) {
+): Promise<boolean> {
+  const flatId = meal.flat_id;
   try {
+    // Exact resolution by the unique key — same tie-break bug as close_poll:
+    // "latest closed poll for this flat" picked arbitrarily between two meals
+    // sharing a date, so one meal's cart could be sent under another's name.
     const { data: poll, error: pollError } = await admin
       .from('daily_polls')
       .select('id, poll_date, flat_note')
       .eq('flat_id', flatId)
+      .eq('poll_date', pollDate)
+      .eq('flat_meal_id', meal.id)
       .eq('status', 'closed')
-      .order('poll_date', { ascending: false })
-      .limit(1)
       .maybeSingle();
 
     if (pollError) throw pollError;
-    if (!poll) return; // nothing to dispatch (idempotent)
+    if (!poll) return true; // nothing to dispatch for this meal (idempotent)
 
     const { data: cook } = await admin
       .from('cooks')
@@ -92,7 +133,7 @@ async function dispatchForFlat(
 
     if (!cook) {
       await logPipelineError(admin, 'dispatch_cook', { message: 'no active cook for flat' }, flatId);
-      return;
+      return false;
     }
 
     const { data: cartRows, error: cartError } = await admin
@@ -102,8 +143,13 @@ async function dispatchForFlat(
     if (cartError) throw cartError;
 
     if (!cartRows || cartRows.length === 0) {
-      await logPipelineError(admin, 'dispatch_cook', { message: 'empty cart at dispatch time' }, flatId);
-      return;
+      await logPipelineError(
+        admin,
+        'dispatch_cook',
+        { message: 'empty cart at dispatch time', meal: meal.name },
+        flatId
+      );
+      return false;
     }
 
     // Mains first, then accompaniments, then sides, mirroring the "list
@@ -119,11 +165,14 @@ async function dispatchForFlat(
 
     const [{ data: memberRows }, { data: attendanceRows }, { data: allIngredientRows }] = await Promise.all([
       admin.from('flat_members').select('user_id').eq('flat_id', flatId),
+      // Scoped to this meal: being out for breakfast must not shrink the
+      // dinner headcount.
       admin
         .from('day_attendance')
         .select('user_id, is_out')
         .eq('flat_id', flatId)
-        .eq('poll_date', poll.poll_date),
+        .eq('poll_date', poll.poll_date)
+        .eq('flat_meal_id', meal.id),
       admin
         .from('recipe_ingredients')
         .select('recipe_id, name_en, name_hi, name_kn, qty_per_person, unit, is_staple, sort_order')
@@ -154,7 +203,13 @@ async function dispatchForFlat(
 
     // Step 3: English payload (per-dish sections + flat note) — this is the
     // in-app preview shape, not constrained by the WhatsApp template's slots.
-    const payloadEn = composeEnglishPayload({ dishes, flatNote: poll.flat_note });
+    const payloadEn = composeEnglishPayload({
+      dishes,
+      flatNote: poll.flat_note,
+      meal: { name: meal.name, serveTime: meal.serve_time },
+      pollDate: poll.poll_date,
+      todayIst,
+    });
 
     // Step 4: translation — cached recipe_translations first; else live
     // Google Translate (flagged reviewed_at=null) if a key is configured;
@@ -164,6 +219,7 @@ async function dispatchForFlat(
       headcount,
       language: cook.language as 'hi' | 'kn' | 'en',
       flatNote: poll.flat_note,
+      heading: composeMealHeading(meal.name, meal.serve_time, poll.poll_date, todayIst),
       fallback: payloadEn,
     });
 
@@ -192,13 +248,10 @@ async function dispatchForFlat(
     });
 
     await admin.from('daily_polls').update({ status: 'dispatched' }).eq('id', poll.id);
+    return true;
   } catch (err) {
-    await logPipelineError(
-      admin,
-      'dispatch_cook',
-      { message: err instanceof Error ? err.message : String(err) },
-      flatId
-    );
+    await logPipelineError(admin, 'dispatch_cook', serializeError(err), flatId);
+    return false;
   }
 }
 
@@ -246,10 +299,11 @@ async function composeTranslatedPayload(
     headcount: number;
     language: 'hi' | 'kn' | 'en';
     flatNote: string | null;
+    heading: string;
     fallback: string;
   }
 ): Promise<string> {
-  const { dishes, headcount, language, flatNote, fallback } = params;
+  const { dishes, headcount, language, flatNote, heading, fallback } = params;
 
   if (language === 'en') return fallback;
 
@@ -272,7 +326,7 @@ async function composeTranslatedPayload(
   const dishSummary = dishes.map((d) => d.name).join(', ');
 
   return [
-    `Today's meal: ${dishSummary}`,
+    `${heading}: ${dishSummary}`,
     `Please cook for ${headcount} people.`,
     '',
     `Ingredients: ${ingredientLine}`,
