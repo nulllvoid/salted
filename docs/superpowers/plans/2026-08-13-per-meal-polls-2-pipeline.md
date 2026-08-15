@@ -172,13 +172,25 @@ test('isMomentInCronWindow is false for a moment already past', () => {
   expect(isMomentInCronWindow(ist(2026, 8, 13, 8, 59), now)).toBe(false);
 });
 
-test('isMomentInCronWindow matches isWithinCronWindow for a same-day event', () => {
-  // The new helper must agree with the old one on the case the old one
-  // already handled — this is the single-meal regression guarantee.
+test('isMomentInCronWindow matches isWithinCronWindow at the tick that fires it', () => {
+  // The single-meal regression guarantee: on the tick where the old
+  // time-of-day check first fires, the new absolute-moment check fires too.
+  // NOTE: the two helpers agree only ON the firing tick, not throughout the
+  // window — an earlier draft of this test compared them at 09:05 for a 09:00
+  // event and failed, because isWithinCronWindow asks "has the target passed
+  // within this window" while isMomentInCronWindow asks "is this upcoming".
+  const tick = ist(2026, 8, 13, 9, 0);
+  const moment = eventMomentIst('2026-08-13', '20:30:00', 690); // 09:00
+  expect(isMomentInCronWindow(moment, tick)).toBe(isWithinCronWindow('09:00:00', tick));
+  expect(isMomentInCronWindow(moment, tick)).toBe(true);
+});
+
+test('isWithinCronWindow and isMomentInCronWindow diverge mid-window, and isMomentDue is the latch', () => {
   const now = ist(2026, 8, 13, 9, 5);
   const moment = eventMomentIst('2026-08-13', '20:30:00', 690); // 09:00
-  expect(isMomentInCronWindow(moment, now)).toBe(isWithinCronWindow('09:00:00', now));
-  expect(isMomentInCronWindow(moment, now)).toBe(true);
+  expect(isWithinCronWindow('09:00:00', now)).toBe(true);
+  expect(isMomentInCronWindow(moment, now)).toBe(false);
+  expect(isMomentDue(moment, now)).toBe(true);
 });
 
 test('isMomentDue stays true after the tick that window matching would miss', () => {
@@ -276,7 +288,7 @@ export function isMomentDue(
 
 Run from `/app`: `npm run test:unit`
 
-Expected: PASS, 13 tests.
+Expected: PASS, 14 tests.
 
 - [ ] **Step 6: Commit**
 

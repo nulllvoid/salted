@@ -53,6 +53,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "test:unit": "playwright test --config=e2e/unit/playwright.config.ts",
     "test:e2e": "playwright test --config=e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test --config=e2e/playwright.config.ts --ui",
     "test:e2e:typecheck": "tsc --noEmit -p e2e/tsconfig.json"
