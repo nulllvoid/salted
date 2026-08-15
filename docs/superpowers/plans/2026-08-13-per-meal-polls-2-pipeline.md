@@ -1553,9 +1553,16 @@ npm run test:e2e
 
 Expected: unit tests all pass; typecheck clean.
 
-For e2e, the honest baseline is **26 passed / 2 failed**, the two failures being the pre-existing `accompaniment.spec.ts` cases (`:47`, `:90`). Those two were already failing before this part and are **not** expected to be fixed by it — `:90` additionally had its dispatch-heading assertion updated in Task 6, which does not by itself make it pass.
+**The "26 passed / 2 failed" baseline written here was stale.** Measured on 2026-08-15 the suite is **10 passed / 18 failed**, and the degradation predates this part.
 
-Any *other* e2e failure is a regression from this part and must be fixed before committing. Compare against the baseline rather than assuming: if a test outside `accompaniment.spec.ts` fails, it is this work.
+Do not assume; bisect. Two representative failures were re-run on `299cd2e` (the last commit before Task 1) and reproduced **identically**, with none of this part's code present:
+
+- `settings.spec.ts:58` — `TypeError: Cannot read properties of undefined (reading 'name')`. The UI cook-save does not persist, so the read-back returns no rows. Touches no pipeline function.
+- `poll-lifecycle.spec.ts:12` — `Palak Paneer` never renders in the locked cart (line 34). Note line 33's `'Dinner tonight'` assertion *passes*, so this is not the Task 6 heading change.
+
+Both point at the app/test fixtures, not the Edge Functions. Root-causing them is out of scope for this part — but the e2e suite currently cannot serve as this part's regression signal, so the **9/9 schedule-baseline query (Step 1), the 24 unit tests, and the live per-function verifications in Tasks 4–6 are the real evidence** here.
+
+Before blaming this part for any e2e failure, run the same test on `299cd2e` first.
 
 Several specs exercise the pipeline end-to-end (`poll-lifecycle`, `grocery-and-dispatch`), so they are the real signal that the single-meal path is unchanged.
 

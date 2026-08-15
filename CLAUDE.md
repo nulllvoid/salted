@@ -6,7 +6,7 @@ Read this before doing anything. Then read `docs/02-prd.md` and `docs/03-mvp-spe
 
 ## Repo status
 
-Wired to a real Supabase project (`pcmtsfcjzoivagpslpch`) — not a local/mock setup. `/app` queries Supabase directly (auth, the shared cart, grocery list, settings all live). `/supabase`'s `create_poll`, `close_poll`, and `dispatch_cook` Edge Functions are fully implemented (dietary veto, 10-day exclusion, variety heuristic, per-dish ingredient scaling, translation cache with graceful fallback) and deployed; `dispatch_cook`'s live BSP send is still unimplemented (mock mode only — no BSP account provisioned yet). pg_cron + pg_net are enabled and scheduled to invoke all three functions every 15 minutes (`supabase/migrations/20260108000003_pg_cron.sql`); each function self-selects which flats are due by comparing its configured time against current IST.
+Wired to a real Supabase project (`pcmtsfcjzoivagpslpch`) — not a local/mock setup. `/app` queries Supabase directly (auth, the shared cart, grocery list, settings all live). `/supabase`'s `create_poll`, `close_poll`, and `dispatch_cook` Edge Functions are fully implemented (dietary veto, 10-day exclusion, variety heuristic, per-dish ingredient scaling, translation cache with graceful fallback) and deployed; `dispatch_cook`'s live BSP send is still unimplemented (mock mode only — no BSP account provisioned yet). pg_cron + pg_net are enabled and scheduled to invoke all three functions every 15 minutes (`supabase/migrations/20260108000003_pg_cron.sql`); each function self-selects which **meals** are due by comparing `flat_meals` wall-clock times against current IST. The scheduling unit is a row in `flat_meals`, not a flat: a flat serving breakfast and dinner gets two independent polls a day. A meal's poll can open on the day *before* it is served, so open/dispatch moments are computed backwards from `serve_time` (`supabase/functions/_shared/ist-time.ts`). All three stages **latch** on "due yet and not yet done" rather than "due in this exact 15-minute tick", so a tick lost to a failed cron run or an edited poll time is recovered on the next one instead of dropped for the day.
 
 Dinner selection is a **shared, multi-item cart**, not a single-winner vote: `create_poll` seeds up to 3 main-course suggestions plus up to 3 accompaniment suggestions each day; any flatmate can tap a suggestion to add it to `cart_items` (one row per poll+recipe, not per-user) at a quantity defaulting to headcount, and any flatmate can edit any line's quantity or remove it while the poll is `open`. `close_poll` just locks the cart (flips status, enforced via RLS) — there is no winner, tie-break, or vote tally anywhere in the pipeline anymore. `dispatch_cook` composes one message covering every cart line, each dish scaled by its own cart quantity.
 
@@ -24,7 +24,8 @@ Dinner selection is a **shared, multi-item cart**, not a single-winner vote: `cr
 - `npx tsc --noEmit` — typecheck
 - `npx expo lint` — lint
 - Copy `app/.env.example` to `app/.env` and fill in `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` before the app can reach a real Supabase project. `src/lib/supabase.ts` throws at import time if these are missing.
-- No test runner is configured yet.
+- `npm run test:unit` — pure unit tests over the Edge Functions' shared logic (`app/e2e/unit/`), run through Playwright with no browser or dev server. Deno is not installed in this environment, so this is how `supabase/functions/**` gets tested; specs import the function `.ts` modules directly.
+- `npm run test:e2e` — Playwright browser tests against the live project (boots Expo on 8081; much slower).
 
 ### Supabase (linked to the live project — most work happens against it directly, not local)
 
@@ -78,7 +79,7 @@ DO NOT build, stub, or scaffold:
 ## Conventions
 
 - Schema changes: edit `docs/05-schema.sql` first, generate migration, then code against it.
-- All user-visible times are IST (Asia/Kolkata). Poll times are per-flat configurable, defaults 09:00 create / 11:00 close / 16:00 dispatch.
+- All user-visible times are IST (Asia/Kolkata). Poll times are configured **per meal** on `flat_meals` (`serve_time`, `open_offset_min`, `close_time`, `dispatch_offset_min`), defaults equivalent to 09:00 create / 11:00 close / 16:00 dispatch for a 20:30 dinner. `flats.poll_open_time` / `poll_close_time` / `dispatch_time` still exist and are still read by the app, but the Edge Functions no longer use them — part 3 migrates the UI and drops them.
 - Ingredient quantities are stored per-person; UI multiplies by each cart line's own quantity (which defaults to, and is capped by, current headcount — not a single flat-wide multiplier, since each dish in the cart can have a different quantity). Units must be purchasable (pieces, g, ml, packets). Spices/staples flagged `is_staple = true` and rendered as a single "check you have: …" line, not in the buy list.
 - Recipe instruction text is written for the cook, imperative, plain English; translation happens at dispatch time, never stored pre-translated (except optional ingredient name_hi/name_kn columns for list readability).
 - WhatsApp dispatch must be mockable: `DISPATCH_MODE=mock|live` env; mock logs payloads to `dispatch_log` without calling the BSP.
