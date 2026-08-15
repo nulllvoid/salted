@@ -24,6 +24,9 @@ export interface RecipeCandidate {
   diet_class: string;
   jain_ok: boolean;
   allergens: string[];
+  // Which meal bases this dish suits ('breakfast' | 'light' | 'full').
+  // A dish can suit several — khichdi works as both a light and a full meal.
+  suitable_bases: string[];
 }
 
 const DIET_RANK: Record<string, number> = { veg: 0, egg: 1, nonveg: 2 };
@@ -71,6 +74,13 @@ function shuffle<T>(items: T[], rng: () => number): T[] {
   return arr;
 }
 
+// A hard filter, exactly like the dietary veto: suggesting a heavy dinner
+// dish for breakfast is worse than suggesting nothing, so callers must NOT
+// fall back to the unfiltered pool when this empties.
+export function filterByBasis(recipes: RecipeCandidate[], basis: string): RecipeCandidate[] {
+  return recipes.filter((r) => r.suitable_bases?.includes(basis));
+}
+
 function hasVariety(options: RecipeCandidate[]): boolean {
   const allSameCuisine = options.every((o) => o.cuisine === options[0].cuisine);
   const allSameBase = options.every((o) => o.base === options[0].base);
@@ -84,14 +94,21 @@ function hasVariety(options: RecipeCandidate[]): boolean {
 export function selectPollOptions(params: {
   flatId: string;
   pollDate: string;
+  flatMealId: string;
   members: MemberDiet[];
   eligibleRecipes: RecipeCandidate[];
   recentlyServedRecipeIds: Set<string>;
+  basis: string;
 }): string[] {
-  const { flatId, pollDate, members, eligibleRecipes, recentlyServedRecipeIds } = params;
-  const rng = seededRng(`${flatId}:${pollDate}`);
+  const { flatId, pollDate, flatMealId, members, eligibleRecipes, recentlyServedRecipeIds, basis } =
+    params;
+  // flatMealId is in the seed so two meals on the same day get different
+  // suggestions — without it breakfast and dinner draw byte-identical lists.
+  const rng = seededRng(`${flatId}:${pollDate}:${flatMealId}`);
 
-  const dietFiltered = eligibleRecipes.filter((r) => isRecipeEligible(r, members));
+  // Both hard filters, neither ever relaxed below.
+  const basisFiltered = filterByBasis(eligibleRecipes, basis);
+  const dietFiltered = basisFiltered.filter((r) => isRecipeEligible(r, members));
   const notRecentlyServed = dietFiltered.filter((r) => !recentlyServedRecipeIds.has(r.id));
 
   // Fall back to the full diet-eligible pool if 10-day exclusion leaves too
@@ -123,14 +140,15 @@ export function selectPollOptions(params: {
 export function selectAccompanimentOptions(params: {
   flatId: string;
   pollDate: string;
+  flatMealId: string;
   validAccompaniments: { recipeId: string; sortOrder: number }[]; // pre-filtered to is_active + dietary-eligible
 }): string[] {
-  const { flatId, pollDate, validAccompaniments } = params;
+  const { flatId, pollDate, flatMealId, validAccompaniments } = params;
   if (validAccompaniments.length === 0) return [];
 
   // Distinct seed suffix so this shuffle doesn't correlate with the
-  // main-dish shuffle for the same (flatId, pollDate).
-  const rng = seededRng(`${flatId}:${pollDate}:accompaniment`);
+  // main-dish shuffle for the same (flatId, pollDate, flatMealId).
+  const rng = seededRng(`${flatId}:${pollDate}:${flatMealId}:accompaniment`);
   const sorted = [...validAccompaniments].sort((a, b) => a.sortOrder - b.sortOrder);
   const shuffled = shuffle(sorted, rng);
   return shuffled.slice(0, 3).map((a) => a.recipeId);
@@ -147,11 +165,12 @@ export async function selectAccompanimentOptionsForSuggestedMains(
   params: {
     flatId: string;
     pollDate: string;
+    flatMealId: string;
     suggestedMainRecipeIds: string[];
     members: MemberDiet[];
   }
 ): Promise<string[]> {
-  const { suggestedMainRecipeIds, members, flatId, pollDate } = params;
+  const { suggestedMainRecipeIds, members, flatId, pollDate, flatMealId } = params;
   if (suggestedMainRecipeIds.length === 0) return [];
 
   const { data: mappingRows, error } = await admin
@@ -174,6 +193,9 @@ export async function selectAccompanimentOptionsForSuggestedMains(
           diet_class: row.recipes.diet_class,
           jain_ok: row.recipes.jain_ok,
           allergens: row.recipes.allergens,
+          // Unused by isRecipeEligible — accompaniments are sourced from the
+          // day's mains, so the meal's basis is already implied.
+          suitable_bases: [],
         },
         members
       )
@@ -191,5 +213,5 @@ export async function selectAccompanimentOptionsForSuggestedMains(
     sortOrder,
   }));
 
-  return selectAccompanimentOptions({ flatId, pollDate, validAccompaniments });
+  return selectAccompanimentOptions({ flatId, pollDate, flatMealId, validAccompaniments });
 }
