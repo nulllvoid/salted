@@ -21,6 +21,7 @@ import {
   nowInIst,
 } from '../_shared/ist-time.ts';
 import { fetchActiveFlatMeals, type FlatMealRow } from '../_shared/flat-meals.ts';
+import { shouldLogMissingMembers } from '../_shared/flat-eligibility.ts';
 import { logPipelineError, serializeError } from '../_shared/pipeline-errors.ts';
 import { selectAccompanimentOptionsForSuggestedMains, selectPollOptions } from './select-options.ts';
 
@@ -69,7 +70,7 @@ Deno.serve(async (_req) => {
   }
 
   const results = await Promise.all(
-    due.map(({ meal, pollDate }) => createPollForMeal(admin, meal, pollDate))
+    due.map(({ meal, pollDate }) => createPollForMeal(admin, meal, pollDate, nowIst))
   );
 
   // Caught per-meal failures are counted, not just logged. During part 1 this
@@ -86,7 +87,8 @@ Deno.serve(async (_req) => {
 async function createPollForMeal(
   admin: ReturnType<typeof createAdminClient>,
   meal: FlatMealRow,
-  pollDate: string
+  pollDate: string,
+  nowIst: Date
 ): Promise<boolean> {
   const flatId = meal.flat_id;
   try {
@@ -104,7 +106,12 @@ async function createPollForMeal(
 
     const members = await fetchMemberDietProfiles(admin, flatId);
     if (members.length === 0) {
-      await logPipelineError(admin, 'create_poll', { message: 'flat has no members' }, flatId);
+      // Throttled: the latch retries this flat every tick and it can never
+      // succeed, so logging every time buries real failures. Still counted
+      // as a failure so the response body stays honest.
+      if (shouldLogMissingMembers(flatId, pollDate, nowIst)) {
+        await logPipelineError(admin, 'create_poll', { message: 'flat has no members' }, flatId);
+      }
       return false;
     }
 
