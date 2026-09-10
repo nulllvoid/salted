@@ -1,49 +1,52 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
-
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { useMyGroups, type GroupSummary } from '@/hooks/use-my-groups';
 import { useSession } from '@/hooks/use-session';
-import { setMealTypes } from '@/lib/groups-stub';
-import type { MealType } from '@/types/domain';
-
+import { addDays, istDate, nextMeal, type Meal } from '@/lib/meal-schedule';
 interface ActiveGroupValue {
-  groups: GroupSummary[] | undefined; // undefined = loading
+  groups: GroupSummary[] | undefined;
+  error?: string;
   activeGroup: GroupSummary | null;
+  activeMeal: Meal | null;
+  pollDate: string;
   setActiveGroupId: (id: string) => void;
-  setGroupMeals: (id: string, meals: MealType[]) => Promise<void>;
+  setActiveMealId: (id: string) => void;
+  setDayOffset: (offset: number) => void;
   reloadGroups: () => Promise<void>;
 }
-
 const ActiveGroupContext = createContext<ActiveGroupValue | null>(null);
-
-// Which of the user's groups the meal screens (Today, grocery list,
-// who-is-eating, cook message preview) are scoped to. Defaults to the first
-// group in meal order; selection is in-memory only.
 export function ActiveGroupProvider({ children }: { children: ReactNode }) {
   const session = useSession();
-  const { groups, reload } = useMyGroups(session);
-  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
-
-  const activeGroup = groups?.find((g) => g.id === activeGroupId) ?? groups?.[0] ?? null;
-
-  const setGroupMeals = useCallback(
-    async (id: string, meals: MealType[]) => {
-      if (meals.length === 0) return; // a group must cover at least one meal
-      await setMealTypes(id, meals);
-      await reload();
-    },
-    [reload]
-  );
-
+  const { groups, error, reload } = useMyGroups(session);
+  const [selection, setSelection] = useState<{
+    group?: string;
+    meal?: string;
+    offset: number;
+  }>({ offset: 0 });
+  const activeGroup =
+    groups?.find((g) => g.id === selection.group) ?? groups?.[0] ?? null;
+  const activeMeal =
+    activeGroup?.meals.find((m) => m.id === selection.meal) ??
+    nextMeal(activeGroup?.meals ?? []);
   return (
     <ActiveGroupContext.Provider
-      value={{ groups, activeGroup, setActiveGroupId, setGroupMeals, reloadGroups: reload }}>
+      value={{
+        groups,
+        error,
+        activeGroup,
+        activeMeal,
+        pollDate: addDays(istDate(), selection.offset),
+        setActiveGroupId: (group) => setSelection({ group, offset: 0 }),
+        setActiveMealId: (meal) => setSelection((s) => ({ ...s, meal })),
+        setDayOffset: (offset) => setSelection((s) => ({ ...s, offset })),
+        reloadGroups: reload,
+      }}
+    >
       {children}
     </ActiveGroupContext.Provider>
   );
 }
-
-export function useActiveGroup(): ActiveGroupValue {
+export function useActiveGroup() {
   const value = useContext(ActiveGroupContext);
-  if (!value) throw new Error('useActiveGroup must be used inside ActiveGroupProvider');
+  if (!value) throw new Error('Missing household provider');
   return value;
 }

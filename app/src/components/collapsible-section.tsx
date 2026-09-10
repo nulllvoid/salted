@@ -25,7 +25,13 @@ export function CollapsibleSection({
 
   return (
     <ThemedView style={styles.container}>
-      <Pressable style={styles.header} onPress={() => setOpen((o) => !o)} hitSlop={8}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        style={styles.header}
+        onPress={() => setOpen((o) => !o)}
+        hitSlop={8}
+      >
         <ThemedView style={styles.headerText}>
           <ThemedText type="smallBold">{title}</ThemedText>
           {!open && summary ? (
@@ -34,7 +40,15 @@ export function CollapsibleSection({
             </ThemedText>
           ) : null}
         </ThemedView>
-        <ThemedText type="smallBold" themeColor="textSecondary" style={[styles.chevron, open && styles.chevronOpen, { color: theme.accent }]}>
+        <ThemedText
+          type="smallBold"
+          themeColor="textSecondary"
+          style={[
+            styles.chevron,
+            open && styles.chevronOpen,
+            { color: theme.accent },
+          ]}
+        >
           ⌄
         </ThemedText>
       </Pressable>

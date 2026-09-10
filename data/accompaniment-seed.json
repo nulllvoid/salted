@@ -1,0 +1,111 @@
+{
+  "recipes": [
+    {
+      "base": "rice",
+      "kind": "accompaniment",
+      "name": "Jeera Rice",
+      "slug": "jeera-rice",
+      "cuisine": "north_indian",
+      "jain_ok": "true",
+      "seasons": "kharif,rabi,zaid",
+      "allergens": "",
+      "diet_class": "veg",
+      "image_path": "",
+      "instructions_en": "Wash and soak rice 15 minutes. Heat ghee, fry cumin till it crackles. Add drained rice, salt, and water (1:2), cook covered on low till done. Rest 5 minutes before fluffing."
+    },
+    {
+      "base": "roti",
+      "kind": "accompaniment",
+      "name": "Roti",
+      "slug": "roti",
+      "cuisine": "north_indian",
+      "jain_ok": "true",
+      "seasons": "kharif,rabi,zaid",
+      "allergens": "",
+      "diet_class": "veg",
+      "image_path": "",
+      "instructions_en": "Knead atta with water and a pinch of salt into a soft dough, rest 15 minutes. Divide into balls, roll thin, cook on a hot tawa till brown spots form on both sides, puff briefly on open flame if using gas."
+    },
+    {
+      "base": "rice",
+      "kind": "accompaniment",
+      "name": "Steamed Rice",
+      "slug": "steamed-rice",
+      "cuisine": "north_indian",
+      "jain_ok": "true",
+      "seasons": "kharif,rabi,zaid",
+      "allergens": "",
+      "diet_class": "veg",
+      "image_path": "",
+      "instructions_en": "Wash rice till water runs clear. Boil water, add rice, cook covered on low heat 12-15 minutes till soft. Rest 5 minutes before serving."
+    }
+  ],
+  "ingredients": [
+    {
+      "unit": "tsp",
+      "name_en": "Oil or ghee",
+      "name_hi": "तेल/घी",
+      "name_kn": "ಎಣ್ಣೆ/ತುಪ್ಪ",
+      "category": "staple",
+      "is_staple": "true",
+      "sort_order": "2",
+      "recipe_slug": "roti",
+      "qty_per_person": "0.5"
+    },
+    {
+      "unit": "tsp",
+      "name_en": "Cumin (jeera)",
+      "name_hi": "जीरा",
+      "name_kn": "ಜೀರಿಗೆ",
+      "category": "staple",
+      "is_staple": "true",
+      "sort_order": "2",
+      "recipe_slug": "jeera-rice",
+      "qty_per_person": "0.4"
+    },
+    {
+      "unit": "tsp",
+      "name_en": "Ghee",
+      "name_hi": "घी",
+      "name_kn": "ತುಪ್ಪ",
+      "category": "staple",
+      "is_staple": "true",
+      "sort_order": "3",
+      "recipe_slug": "jeera-rice",
+      "qty_per_person": "1"
+    },
+    {
+      "unit": "g",
+      "name_en": "Wheat flour (atta)",
+      "name_hi": "आटा",
+      "name_kn": "ಗೋಧಿ ಹಿಟ್ಟು",
+      "category": "other",
+      "is_staple": "false",
+      "sort_order": "1",
+      "recipe_slug": "roti",
+      "qty_per_person": "60"
+    },
+    {
+      "unit": "g",
+      "name_en": "Rice",
+      "name_hi": "चावल",
+      "name_kn": "ಅಕ್ಕಿ",
+      "category": "other",
+      "is_staple": "false",
+      "sort_order": "1",
+      "recipe_slug": "steamed-rice",
+      "qty_per_person": "75"
+    },
+    {
+      "unit": "g",
+      "name_en": "Rice",
+      "name_hi": "चावल",
+      "name_kn": "ಅಕ್ಕಿ",
+      "category": "other",
+      "is_staple": "false",
+      "sort_order": "1",
+      "recipe_slug": "jeera-rice",
+      "qty_per_person": "75"
+    }
+  ]
+}

@@ -1,191 +1,86 @@
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
+import { View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { Button, Card, Chip, Field, Notice, Screen, ui } from '@/components/ui';
 import { useActiveGroup } from '@/contexts/active-group';
-import { useTheme } from '@/hooks/use-theme';
-import { setMealTypes } from '@/lib/groups-stub';
-import { MEAL_ORDER, mealLabel } from '@/lib/meal-copy';
+import { useAction } from '@/hooks/use-action';
 import { supabase } from '@/lib/supabase';
+import { mealDefaults } from '@/lib/meal-schedule';
 import type { MealType } from '@/types/domain';
-
-// Creates a group: one cook, its own cart, covering one or more meals
-// (design doc). A group is a flats row under the hood — the meal(s) live in
-// the groups stub until a flats.meal_type column exists. Also reached from
-// Settings' "Create group" button.
 export default function CreateGroupScreen() {
   const router = useRouter();
   const { reloadGroups, setActiveGroupId } = useActiveGroup();
-  const theme = useTheme();
-
   const [name, setName] = useState('');
   const [meals, setMeals] = useState<MealType[]>(['dinner']);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function toggleMeal(meal: MealType) {
-    setMeals((current) =>
-      current.includes(meal) ? current.filter((m) => m !== meal) : [...current, meal]
-    );
-  }
-
-  async function createGroup() {
-    setError(null);
-    setLoading(true);
-
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData.user?.id;
-    if (!userId) {
-      setLoading(false);
-      setError('Not signed in');
-      return;
-    }
-
-    const { data: flat, error: flatError } = await supabase
-      .from('flats')
-      .insert({ name, created_by: userId })
-      .select('id')
-      .single();
-
-    if (flatError || !flat) {
-      setLoading(false);
-      setError(flatError?.message ?? 'Could not create group');
-      return;
-    }
-
-    const { error: memberError } = await supabase
-      .from('flat_members')
-      .insert({ flat_id: flat.id, user_id: userId, role: 'admin' });
-
-    if (memberError) {
-      setLoading(false);
-      setError(memberError.message);
-      return;
-    }
-
-    await setMealTypes(flat.id, meals);
-    await reloadGroups();
-    setActiveGroupId(flat.id);
-    setLoading(false);
-    router.push({ pathname: '/onboarding/cook', params: { groupId: flat.id } });
-  }
-
+  const action = useAction();
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ThemedView style={styles.container}>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.kicker}>
-          Your household
+    <Screen>
+      <Button secondary onPress={() => router.back()}>
+        Back
+      </Button>
+      <View style={{ gap: 10 }}>
+        <ThemedText type="smallBold" themeColor="accentText">
+          YOUR HOUSEHOLD · 1 OF 2
         </ThemedText>
-        <ThemedText type="title" style={styles.heading}>
-          create your group
+        <ThemedText type="title">A table of your own.</ThemedText>
+        <ThemedText themeColor="textSecondary">
+          One shared space for your housemates, your meals, and your cook.
         </ThemedText>
-        <ThemedText type="default" themeColor="textSecondary">
-          One group, one cook, one cart per day — covering whichever meals you pick below. Add more
-          groups later from Settings.
-        </ThemedText>
-
-        <TextInput
-          placeholder={'Group name (e.g. "2BHK dinner")'}
-          placeholderTextColor={theme.textSecondary}
+      </View>
+      <Card>
+        <Field
+          label="Household name"
+          placeholder="e.g. The Indiranagar flat"
           value={name}
           onChangeText={setName}
-          style={[styles.input, { borderColor: theme.divider, color: theme.text, backgroundColor: theme.backgroundElement }]}
+          maxLength={80}
         />
-
-        <ThemedText type="small" themeColor="textSecondary" style={styles.kicker}>
-          Which meals is this group for?
+        <ThemedText type="smallBold">Which meals do you share?</ThemedText>
+        <View style={ui.wrap}>
+          {Object.entries(mealDefaults).map(([key, meal]) => (
+            <Chip
+              key={key}
+              selected={meals.includes(key as MealType)}
+              onPress={() =>
+                setMeals((current) =>
+                  current.includes(key as MealType)
+                    ? current.filter((m) => m !== key)
+                    : [...current, key as MealType],
+                )
+              }
+            >
+              {meal.name}
+            </Chip>
+          ))}
+        </View>
+        <ThemedText type="small" themeColor="textSecondary">
+          Each meal has its own menu and schedule. You can adjust the times in
+          Settings.
         </ThemedText>
-        <ThemedView style={styles.segRow}>
-          {MEAL_ORDER.map((option) => {
-            const selected = meals.includes(option);
-            return (
-              <Pressable
-                key={option}
-                onPress={() => toggleMeal(option)}
-                style={[
-                  styles.segOption,
-                  { borderColor: theme.divider },
-                  selected && { backgroundColor: theme.accent, borderColor: theme.accent },
-                ]}>
-                <ThemedText type="smallBold" style={selected ? { color: theme.background } : undefined}>
-                  {mealLabel(option)}
-                </ThemedText>
-              </Pressable>
-            );
-          })}
-        </ThemedView>
-
-        <Pressable
-          style={[
-            styles.primaryButton,
-            { backgroundColor: theme.accent },
-            (loading || !name || meals.length === 0) && styles.disabled,
-          ]}
-          onPress={() => void createGroup()}
-          disabled={loading || !name || meals.length === 0}>
-          <ThemedText type="smallBold" style={[styles.primaryButtonText, { color: theme.background }]}>
-            {loading ? 'Creating…' : 'Create group'}
-          </ThemedText>
-        </Pressable>
-
-        {error && (
-          <ThemedText type="small" style={{ color: theme.danger }}>
-            {error}
-          </ThemedText>
-        )}
-      </ThemedView>
-    </SafeAreaView>
+      </Card>
+      {action.error && <Notice error>{action.error}</Notice>}
+      <Button
+        busy={action.pending}
+        disabled={!name.trim() || !meals.length}
+        onPress={() => {
+          void action.run(async () => {
+            const { data, error } = await supabase.rpc('create_household', {
+              p_name: name.trim(),
+              p_meals: meals,
+            });
+            if (error) throw error;
+            await reloadGroups();
+            setActiveGroupId(data!);
+            router.replace({
+              pathname: '/onboarding/cook',
+              params: { groupId: data! },
+            });
+          });
+        }}
+      >
+        Create household
+      </Button>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: Spacing.four,
-    gap: Spacing.three,
-  },
-  kicker: {
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heading: {
-    fontSize: 34,
-    lineHeight: 38,
-  },
-  input: {
-    borderWidth: 1.5,
-    borderRadius: Radius.pill,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.four,
-    fontSize: 16,
-    fontFamily: Fonts.body,
-  },
-  segRow: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-  },
-  segOption: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.pill,
-    borderWidth: 1.5,
-  },
-  primaryButton: {
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  primaryButtonText: {
-    fontFamily: Fonts.bodyBold,
-  },
-});

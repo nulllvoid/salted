@@ -60,8 +60,18 @@ async function main() {
 
   const recipesCsv = parseCsv(readFileSync(join(DATA_DIR, 'recipes.csv'), 'utf-8'));
   const ingredientsCsv = parseCsv(readFileSync(join(DATA_DIR, 'ingredients.csv'), 'utf-8'));
+  // The three shared accompaniments are curated separately from generated mains.
+  const supplement: { recipes: Record<string, string>[]; ingredients: Record<string, string>[] } =
+    JSON.parse(readFileSync(join(DATA_DIR, 'accompaniment-seed.json'), 'utf8'));
+  const knownSlugs = new Set(recipesCsv.map(row => row.slug));
+  for (const recipe of supplement.recipes) {
+    if (knownSlugs.has(recipe.slug)) continue;
+    recipesCsv.push(recipe);
+    ingredientsCsv.push(...supplement.ingredients.filter(row => row.recipe_slug === recipe.slug));
+  }
   const accompanimentsCsv = parseCsv(readFileSync(join(DATA_DIR, 'recipe-accompaniments.csv'), 'utf-8'));
 
+  const mealBases: Record<string, string[]> = JSON.parse(readFileSync(join(DATA_DIR, 'meal-bases.json'), 'utf8'));
   for (const row of recipesCsv) {
     const { error } = await supabase.from('recipes').upsert(
       {
@@ -69,7 +79,8 @@ async function main() {
         name: row.name,
         cuisine: row.cuisine,
         base: row.base,
-        kind: row.kind || 'main',
+        kind: ['roti','steamed-rice','jeera-rice'].includes(row.slug) ? 'accompaniment' : row.kind || 'main',
+        suitable_bases: [...Object.entries(mealBases).filter(([,slugs]) => slugs.includes(row.slug)).map(([basis]) => basis), 'full'],
         diet_class: row.diet_class,
         jain_ok: row.jain_ok === 'true',
         allergens: row.allergens ? row.allergens.split(',').filter(Boolean) : [],

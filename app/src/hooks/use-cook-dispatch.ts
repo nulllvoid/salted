@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-
+import { useCallback, useEffect } from 'react';
+import { useActiveGroup } from '@/contexts/active-group';
 import { supabase } from '@/lib/supabase';
-
+import { useResource } from './use-resource';
 export interface CookDispatchView {
   cookName: string;
   cookPhone: string;
@@ -9,89 +9,66 @@ export interface CookDispatchView {
   payloadEn: string;
   payloadTranslated: string;
 }
-
-// Today's dispatch state for the flat's active cook — either the composed
-// message pre-dispatch ('queued', dispatch_log row doesn't exist yet) or the
-// actual dispatch_log row once dispatch_cook has run (docs/03-mvp-spec.md
-// cook-message-preview). Realtime-subscribed so a status flip from
-// wa_webhook (mocked/sent → delivered/failed) shows up live.
 export function useCookDispatch(flatId: string | null | undefined) {
-  const [dispatch, setDispatch] = useState<CookDispatchView | null | undefined>(undefined); // undefined = loading
-  const [pollId, setPollId] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!flatId) {
-      setDispatch(null);
-      return;
-    }
-
-    const todayIst = new Date(Date.now() + (5 * 60 + 30) * 60000).toISOString().slice(0, 10);
-
-    const [{ data: pollRow }, { data: cookRow }] = await Promise.all([
+  const { activeMeal, pollDate } = useActiveGroup();
+  const mealId = activeMeal?.id;
+  const fetcher = useCallback(async (): Promise<CookDispatchView | null> => {
+    if (!flatId || !mealId) return null;
+    const [poll, cook] = await Promise.all([
       supabase
         .from('daily_polls')
         .select('id, status')
         .eq('flat_id', flatId)
-        .eq('poll_date', todayIst)
-        .maybeSingle(),
-      supabase.from('cooks').select('name, phone').eq('flat_id', flatId).eq('is_active', true).maybeSingle(),
+        .eq('flat_meal_id', mealId)
+        .eq('poll_date', pollDate)
+        .maybeSingle()
+        .throwOnError(),
+      supabase
+        .from('cooks')
+        .select('name, phone')
+        .eq('flat_id', flatId)
+        .eq('is_active', true)
+        .maybeSingle()
+        .throwOnError(),
     ]);
-
-    if (!pollRow || !cookRow) {
-      setDispatch(null);
-      setPollId(null);
-      return;
-    }
-
-    setPollId(pollRow.id);
-
-    const { data: logRow } = await supabase
+    if (!poll.data || !cook.data || poll.data.status === 'cancelled')
+      return null;
+    const { data: log } = await supabase
       .from('dispatch_log')
       .select('status, payload_en, payload_translated')
-      .eq('poll_id', pollRow.id)
+      .eq('poll_id', poll.data.id)
       .order('created_at', { ascending: false })
       .limit(1)
-      .maybeSingle();
-
-    if (!logRow) {
-      setDispatch({
-        cookName: cookRow.name,
-        cookPhone: cookRow.phone,
-        status: 'queued',
-        payloadEn: '',
-        payloadTranslated: '',
-      });
-      return;
-    }
-
-    setDispatch({
-      cookName: cookRow.name,
-      cookPhone: cookRow.phone,
-      status: logRow.status as CookDispatchView['status'],
-      payloadEn: logRow.payload_en,
-      payloadTranslated: logRow.payload_translated,
-    });
-  }, [flatId]);
-
+      .maybeSingle()
+      .throwOnError();
+    return {
+      cookName: cook.data.name,
+      cookPhone: cook.data.phone,
+      status: (log?.status ?? 'queued') as CookDispatchView['status'],
+      payloadEn: log?.payload_en ?? '',
+      payloadTranslated: log?.payload_translated ?? '',
+    };
+  }, [flatId, mealId, pollDate]);
+  const {
+    data: dispatch,
+    error,
+    reload,
+  } = useResource(`dispatch:${flatId}:${mealId}:${pollDate}`, fetcher);
   useEffect(() => {
-    void Promise.resolve().then(load);
-  }, [load]);
-
-  useEffect(() => {
-    if (!pollId) return;
+    if (!flatId) return;
     const channel = supabase
-      .channel(`dispatch:${pollId}`)
+      .channel(`cook-preview:${flatId}:${mealId}:${pollDate}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'dispatch_log', filter: `poll_id=eq.${pollId}` },
-        () => load()
+        { event: '*', schema: 'public', table: 'dispatch_log' },
+        () => {
+          void reload();
+        },
       )
       .subscribe();
-
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [pollId, load]);
-
-  return { dispatch, reload: load };
+  }, [flatId, mealId, pollDate, reload]);
+  return { dispatch, error, reload };
 }

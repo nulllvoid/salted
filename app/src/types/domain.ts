@@ -6,20 +6,17 @@
 // `supabase gen types`, so the generated Database type widens these columns
 // to plain `string` — these are hand-kept in sync with the schema instead.
 
-// A meal a group covers. UI-only for now — stored in the groups stub
-// (src/lib/groups-stub.ts) until a flats.meal_type column exists. A group
-// can cover more than one meal (see MealType[] usage) — this is purely a
-// display-copy concept: the backend pipeline (create_poll/close_poll/
-// dispatch_cook) has no meal dimension at all, exactly one cart/poll/
-// dispatch per group per day regardless of which meals it's labeled with.
+// Preset names for household creation. Live meals are flat_meals records.
 export type MealType = 'breakfast' | 'lunch' | 'dinner';
 
 export type DietType = 'veg' | 'egg' | 'nonveg';
 export type Allergen = 'peanut' | 'dairy' | 'gluten' | 'shellfish' | 'soy';
 export type PollStatus = 'open' | 'closed' | 'cancelled' | 'dispatched';
 export type RecipeKind = 'main' | 'accompaniment' | 'side';
-export type IngredientUnit = 'piece' | 'g' | 'ml' | 'bunch' | 'packet' | 'cup' | 'tbsp' | 'tsp';
-export type IngredientCategory = 'vegetable' | 'dairy' | 'staple' | 'protein' | 'other';
+export type IngredientUnit =
+  'piece' | 'g' | 'ml' | 'bunch' | 'packet' | 'cup' | 'tbsp' | 'tsp';
+export type IngredientCategory =
+  'vegetable' | 'dairy' | 'staple' | 'protein' | 'other';
 
 // A shared, live-edited cart line (cart_items row) — one per (poll, recipe),
 // NOT per-user. quantity is the single shared value all members see and
@@ -49,8 +46,20 @@ export interface SuggestionView {
 // the client in the same call that mutates cart_items/day_attendance — see
 // docs/05-schema.sql for the table this is shaped from.
 export type ActivityEntry =
-  | { id: string; createdAt: string; actorDisplayName: string | null; eventType: 'cart_add'; recipeName: string }
-  | { id: string; createdAt: string; actorDisplayName: string | null; eventType: 'cart_remove'; recipeName: string }
+  | {
+      id: string;
+      createdAt: string;
+      actorDisplayName: string | null;
+      eventType: 'cart_add';
+      recipeName: string;
+    }
+  | {
+      id: string;
+      createdAt: string;
+      actorDisplayName: string | null;
+      eventType: 'cart_remove';
+      recipeName: string;
+    }
   | {
       id: string;
       createdAt: string;

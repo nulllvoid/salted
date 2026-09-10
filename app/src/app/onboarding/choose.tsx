@@ -1,92 +1,36 @@
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
-
-// Household setup entry point, after user onboarding is done: create a new
-// group or join an existing one (design doc: "On user onboarding completion,
-// the user gets the option to create/join").
-export default function OnboardingChooseScreen() {
+import { Button, Card, Screen } from '@/components/ui';
+export default function ChooseScreen() {
   const router = useRouter();
-  const theme = useTheme();
-
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ThemedView style={styles.container}>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.kicker}>
-          Your household
+    <Screen>
+      <ThemedText type="smallBold" themeColor="accentText">
+        BETTER MEALS, TOGETHER
+      </ThemedText>
+      <ThemedText type="title">Who’s at your table?</ThemedText>
+      <ThemedText themeColor="textSecondary">
+        Create a household for your shared meals, or join the one your
+        housemates already use.
+      </ThemedText>
+      <Card>
+        <ThemedText type="subtitle">Start something good.</ThemedText>
+        <ThemedText themeColor="textSecondary">
+          Set your meals, add your cook, and invite everyone in.
         </ThemedText>
-        <ThemedText type="title" style={styles.heading}>
-          set up your group
+        <Button onPress={() => router.push('/onboarding/create-group')}>
+          Create a household
+        </Button>
+      </Card>
+      <Card>
+        <ThemedText type="subtitle">Already invited?</ThemedText>
+        <ThemedText themeColor="textSecondary">
+          All you need is the invite code.
         </ThemedText>
-        <ThemedText type="default" themeColor="textSecondary">
-          One group = one meal, one cook. A household can run several — breakfast and dinner can be
-          different groups.
-        </ThemedText>
-
-        <Pressable
-          onPress={() => router.push('/onboarding/create-group')}
-          style={({ pressed }) => [
-            styles.choiceCard,
-            { backgroundColor: theme.backgroundElement },
-            pressed && styles.pressed,
-          ]}>
-          <ThemedText type="default" style={styles.choiceTitle}>
-            Create a group
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            You pick the meal and set up the cook.
-          </ThemedText>
-        </Pressable>
-
-        <Pressable
-          onPress={() => router.push('/onboarding/join-group')}
-          style={({ pressed }) => [
-            styles.choiceCard,
-            { backgroundColor: theme.backgroundElement },
-            pressed && styles.pressed,
-          ]}>
-          <ThemedText type="default" style={styles.choiceTitle}>
-            Join with a code
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            Someone in your household sent you an invite code.
-          </ThemedText>
-        </Pressable>
-      </ThemedView>
-    </SafeAreaView>
+        <Button secondary onPress={() => router.push('/onboarding/join-group')}>
+          Join with an invite code
+        </Button>
+      </Card>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: Spacing.four,
-    gap: Spacing.three,
-  },
-  kicker: {
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heading: {
-    fontSize: 34,
-    lineHeight: 38,
-  },
-  choiceCard: {
-    padding: Spacing.four,
-    borderRadius: Radius.md,
-    gap: Spacing.half,
-  },
-  choiceTitle: {
-    fontFamily: Fonts.bodyBold,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-});

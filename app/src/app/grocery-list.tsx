@@ -1,186 +1,199 @@
-import { useMemo } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
+import { useState } from 'react';
+import { Pressable, Share, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { useRouter } from 'expo-router';
+import { formatMealDate } from '@/lib/meal-schedule';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import {
+  Button,
+  Card,
+  Empty,
+  Loading,
+  Notice,
+  Screen,
+  ui,
+} from '@/components/ui';
 import { useActiveGroup } from '@/contexts/active-group';
 import { useGroceryList } from '@/hooks/use-grocery-list';
+import { useAction } from '@/hooks/use-action';
 import { useTheme } from '@/hooks/use-theme';
-import { mealNounList, mealShareHeadingList } from '@/lib/meal-copy';
-import type { GroceryLineView } from '@/types/domain';
-
-const CATEGORY_ORDER = ['vegetable', 'dairy', 'protein', 'other'] as const;
-const CATEGORY_LABEL: Record<(typeof CATEGORY_ORDER)[number], string> = {
-  vegetable: 'Vegetables',
-  dairy: 'Dairy',
-  protein: 'Protein',
-  other: 'Other',
-};
-
 export default function GroceryListScreen() {
-  const { activeGroup } = useActiveGroup();
-  const flatId = activeGroup?.id;
-  const meals = activeGroup?.meals ?? ['dinner'];
-  const { data, toggleChecked } = useGroceryList(flatId);
+  const router = useRouter();
+  const { activeGroup, pollDate } = useActiveGroup();
+  const { data, error, reload, toggleChecked } = useGroceryList(
+    activeGroup?.id,
+  );
+  const action = useAction();
   const theme = useTheme();
-
-  const buyList = useMemo(() => data?.lines.filter((l) => !l.isStaple) ?? [], [data]);
-  const staples = useMemo(() => data?.lines.filter((l) => l.isStaple) ?? [], [data]);
-  const uncheckedCount = buyList.filter((l) => !l.checked).length;
-
-  // meals is a fresh array on every render when activeGroup is undefined
-  // (the ?? ['dinner'] fallback) — depend on the joined string instead so
-  // this memo doesn't invalidate every render.
-  const mealsKey = meals.join(',');
-  const shareText = useMemo(() => {
-    if (!data) return '';
-    const toBuy = buyList
-      .filter((l) => !l.checked)
-      .map((l) => `- ${l.nameEn} — ${l.quantityLabel} (for ${l.dishName})`)
-      .join('\n');
-    const stapleNames = staples.map((s) => s.nameEn).join(', ');
-    return `${mealShareHeadingList(meals)} ${data.dishSummary}\nTo buy:\n${toBuy}\nCheck at home: ${stapleNames}`;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mealsKey is meals' stable dependency proxy (see comment above); depending on meals directly defeats the memo.
-  }, [data, buyList, staples, mealsKey]);
-
-  async function handleShare() {
-    await Share.share({ message: shareText });
-  }
-
-  const grouped = CATEGORY_ORDER.map((category) => ({
-    category,
-    items: buyList.filter((l: GroceryLineView) => l.category === category),
-  })).filter((g) => g.items.length > 0);
-
-  if (data === undefined) {
-    return null; // loading
-  }
-
-  if (data === null) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.container}>
-          <ThemedText type="subtitle">No grocery list yet</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            This shows up once something&apos;s in the {mealNounList(meals)} cart.
-          </ThemedText>
-        </ThemedView>
-      </SafeAreaView>
-    );
-  }
-
+  const [copied, setCopied] = useState(false);
+  const groceries = data?.lines.filter((l) => !l.isStaple) ?? [];
+  const staples = data?.lines.filter((l) => l.isStaple) ?? [];
+  const remaining = groceries.filter((l) => !l.checked);
+  const shareText = `${activeGroup?.name} · groceries for ${formatMealDate(pollDate)}\n${remaining.length ? remaining.map((l) => `• ${l.nameEn} — ${l.quantityLabel}`).join('\n') : 'Everything is covered.'}${staples.length ? `\nCheck at home: ${staples.map((l) => l.nameEn).join(', ')}` : ''}`;
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <ThemedText type="subtitle">{data.dishSummary}</ThemedText>
-
-        {grouped.map(({ category, items }) => (
-          <ThemedView key={category} style={styles.categorySection}>
-            <ThemedText type="smallBold" themeColor="textSecondary">
-              {CATEGORY_LABEL[category]}
+    <Screen
+      footer={
+        data ? (
+          <>
+            <ThemedText type="smallBold">
+              {remaining.length
+                ? `${remaining.length} items left to get`
+                : 'Everything is covered'}
             </ThemedText>
-            {items.map((item) => (
-              <Pressable
-                key={item.ingredientId}
-                onPress={() => toggleChecked(item.ingredientId, !item.checked)}
-                style={styles.itemRow}>
-                <ThemedView
-                  style={[
-                    styles.checkbox,
-                    { borderColor: theme.accent },
-                    item.checked && { backgroundColor: theme.accent },
-                  ]}
-                />
-                <ThemedView style={styles.itemTextCol}>
-                  <ThemedText type="default" style={item.checked && styles.itemTextChecked}>
-                    {item.nameEn}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {item.quantityLabel} — for {item.dishName}
-                  </ThemedText>
-                </ThemedView>
-              </Pressable>
-            ))}
-          </ThemedView>
-        ))}
-
-        {staples.length > 0 && (
-          <ThemedView type="backgroundElement" style={styles.stapleLine}>
-            <ThemedText type="small">
-              Check you have: {staples.map((s) => s.nameEn).join(', ')}
-            </ThemedText>
-          </ThemedView>
-        )}
-      </ScrollView>
-
-      <ThemedView type="backgroundElement" style={[styles.footer, { borderTopColor: theme.divider }]}>
-        <ThemedText type="small">{uncheckedCount} to buy</ThemedText>
-        <ThemedView style={styles.footerActions}>
-          <Pressable style={styles.footerButton} onPress={handleShare}>
-            <ThemedText type="smallBold" style={styles.footerButtonText}>
-              Share to WhatsApp
-            </ThemedText>
-          </Pressable>
-        </ThemedView>
-      </ThemedView>
-    </SafeAreaView>
+            <Button
+              busy={action.pending}
+              onPress={() => {
+                void action.run(() => Share.share({ message: shareText }));
+              }}
+            >
+              Share shopping list
+            </Button>
+            <Button
+              secondary
+              onPress={() => {
+                void action.run(async () => {
+                  await Clipboard.setStringAsync(shareText);
+                  setCopied(true);
+                });
+              }}
+            >
+              {copied ? 'Copied to clipboard' : 'Copy list'}
+            </Button>
+          </>
+        ) : undefined
+      }
+    >
+      <ThemedText type="smallBold" themeColor="accentText">
+        ONE HOUSEHOLD, ONE SHOPPING LIST
+      </ThemedText>
+      <ThemedText type="title">A little prep.</ThemedText>
+      <ThemedText themeColor="textSecondary">
+        All your meals for {formatMealDate(pollDate)}. Tick what you have; share
+        what’s missing.
+      </ThemedText>
+      {(error || action.error) && (
+        <>
+          <Notice error>{error || action.error}</Notice>
+          <Button
+            secondary
+            onPress={() => {
+              void reload();
+            }}
+          >
+            Try again
+          </Button>
+        </>
+      )}
+      {data === undefined && !error && (
+        <Loading label="Putting your shopping list together…" />
+      )}
+      {data === null && (
+        <Empty
+          title="Nothing to shop for yet"
+          detail="Add dishes to a meal and we’ll work out the ingredients."
+          action="Back to your menu"
+          onAction={() => router.back()}
+        />
+      )}
+      {data && (
+        <>
+          {data.provisional && (
+            <Notice>
+              Some menus are still open. Quantities may change as your
+              housemates edit dishes.
+            </Notice>
+          )}
+          <ThemedText type="small" themeColor="textSecondary">
+            For {data.dishSummary}
+          </ThemedText>
+          {['vegetable', 'dairy', 'protein', 'other'].map((category) => {
+            const lines = groceries
+              .filter((l) => l.category === category)
+              .sort((a, b) => Number(a.checked) - Number(b.checked));
+            return lines.length ? (
+              <Card key={category}>
+                <ThemedText type="smallBold">
+                  {
+                    (
+                      {
+                        vegetable: 'Vegetables',
+                        dairy: 'Dairy',
+                        protein: 'Protein',
+                        other: 'Other essentials',
+                      } as Record<string, string>
+                    )[category]
+                  }
+                </ThemedText>
+                {lines.map((item) => (
+                  <Pressable
+                    key={item.ingredientId}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={`${item.nameEn}, ${item.quantityLabel}`}
+                    aria-checked={item.checked}
+                    accessibilityState={{
+                      checked: item.checked,
+                      disabled: action.pending,
+                    }}
+                    disabled={action.pending}
+                    onPress={() => {
+                      void action.run(() =>
+                        toggleChecked(item.ingredientId, !item.checked),
+                      );
+                    }}
+                    style={[ui.row, { minHeight: 60, paddingVertical: 8 }]}
+                  >
+                    <View
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        borderWidth: 1.5,
+                        borderColor: theme.accentText,
+                        backgroundColor: item.checked
+                          ? theme.accentText
+                          : 'transparent',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <ThemedText style={{ color: theme.background }}>
+                        {item.checked ? '✓' : ''}
+                      </ThemedText>
+                    </View>
+                    <View style={{ flex: 1, gap: 3 }}>
+                      <ThemedText
+                        style={{
+                          textDecorationLine: item.checked
+                            ? 'line-through'
+                            : 'none',
+                          color: item.checked
+                            ? theme.textSecondary
+                            : theme.text,
+                        }}
+                      >
+                        {item.nameEn}
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {item.quantityLabel} · {item.dishName}
+                      </ThemedText>
+                    </View>
+                  </Pressable>
+                ))}
+              </Card>
+            ) : null;
+          })}
+          {staples.length > 0 && (
+            <Card>
+              <ThemedText type="smallBold">
+                Check the kitchen cupboard
+              </ThemedText>
+              <ThemedText themeColor="textSecondary">
+                {staples.map((l) => l.nameEn).join(' · ')}
+              </ThemedText>
+            </Card>
+          )}
+        </>
+      )}
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: {
-    padding: Spacing.four,
-    gap: Spacing.four,
-    paddingBottom: Spacing.six,
-  },
-  categorySection: {
-    gap: Spacing.two,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingVertical: Spacing.one,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: Radius.sm,
-    borderWidth: 2,
-  },
-  itemTextCol: {
-    flex: 1,
-  },
-  itemTextChecked: {
-    textDecorationLine: 'line-through',
-    opacity: 0.5,
-  },
-  stapleLine: {
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.three,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  footerActions: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-  },
-  footerButton: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.pill,
-    backgroundColor: '#25D366',
-  },
-  footerButtonText: {
-    fontFamily: Fonts.bodyBold,
-    color: '#ffffff',
-  },
-});

@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId } from 'react';
 
+import { useActiveGroup } from '@/contexts/active-group';
+import { useResource } from './use-resource';
 import { supabase } from '@/lib/supabase';
 import type { Json } from '@/types/database';
-import type { ActivityEntry, CartLineView, DietType, RecipeKind, SuggestionView, TodayCartView } from '@/types/domain';
+import type {
+  ActivityEntry,
+  CartLineView,
+  DietType,
+  RecipeKind,
+  SuggestionView,
+  TodayCartView,
+} from '@/types/domain';
 
 const DIET_RANK: Record<DietType, number> = { veg: 0, egg: 1, nonveg: 2 };
 
@@ -23,10 +32,22 @@ function toActivityEntry(row: ActivityLogRow): ActivityEntry | null {
   switch (row.event_type) {
     case 'cart_add':
       if (!row.recipes) return null;
-      return { id: row.id, createdAt: row.created_at, actorDisplayName, eventType: 'cart_add', recipeName: row.recipes.name };
+      return {
+        id: row.id,
+        createdAt: row.created_at,
+        actorDisplayName,
+        eventType: 'cart_add',
+        recipeName: row.recipes.name,
+      };
     case 'cart_remove':
       if (!row.recipes) return null;
-      return { id: row.id, createdAt: row.created_at, actorDisplayName, eventType: 'cart_remove', recipeName: row.recipes.name };
+      return {
+        id: row.id,
+        createdAt: row.created_at,
+        actorDisplayName,
+        eventType: 'cart_remove',
+        recipeName: row.recipes.name,
+      };
     case 'cart_quantity_change':
       if (!row.recipes) return null;
       return {
@@ -56,46 +77,53 @@ function toActivityEntry(row: ActivityLogRow): ActivityEntry | null {
 // edits appear live across members (this is a shared, live-edited cart —
 // not per-user votes; any member can edit any line). Callers pass the
 // active group's id (see contexts/active-group.tsx).
-export function useTodayCart(flatId: string | null | undefined, userId: string | undefined) {
-  const [cart, setCart] = useState<TodayCartView | null | undefined>(undefined); // undefined = loading
-  const [headcount, setHeadcount] = useState(0);
-
+export function useTodayCart(
+  flatId: string | null | undefined,
+  userId: string | undefined,
+) {
+  const channelId = useId();
+  const { activeMeal, pollDate } = useActiveGroup();
+  const mealId = activeMeal?.id;
   const fetchHeadcount = useCallback(
     async (todayIst: string) => {
       if (!flatId) return 0;
-      const [{ data: memberRows }, { data: attendanceRows }] = await Promise.all([
-        supabase.from('flat_members').select('user_id').eq('flat_id', flatId),
-        supabase
-          .from('day_attendance')
-          .select('user_id, is_out')
-          .eq('flat_id', flatId)
-          .eq('poll_date', todayIst),
-      ]);
-      const outUserIds = new Set((attendanceRows ?? []).filter((a) => a.is_out).map((a) => a.user_id));
+      const [{ data: memberRows }, { data: attendanceRows }] =
+        await Promise.all([
+          supabase
+            .from('flat_members')
+            .select('user_id')
+            .eq('flat_id', flatId)
+            .throwOnError(),
+          supabase
+            .from('day_attendance')
+            .select('user_id, is_out')
+            .eq('flat_id', flatId)
+            .eq('poll_date', todayIst)
+            .eq('flat_meal_id', mealId!)
+            .throwOnError(),
+        ]);
+      const outUserIds = new Set(
+        (attendanceRows ?? []).filter((a) => a.is_out).map((a) => a.user_id),
+      );
       return Math.max((memberRows ?? []).length - outUserIds.size, 0);
     },
-    [flatId]
+    [flatId, mealId],
   );
 
-  const load = useCallback(async () => {
-    if (!flatId || !userId) {
-      setCart(null);
-      return;
-    }
-
-    const todayIst = new Date(Date.now() + (5 * 60 + 30) * 60000).toISOString().slice(0, 10);
+  const fetcher = useCallback(async (): Promise<TodayCartView | null> => {
+    if (!flatId || !userId || !mealId) return null;
+    const todayIst = pollDate;
 
     const { data: pollRow } = await supabase
       .from('daily_polls')
       .select('id, poll_date, status, flat_meal_id')
       .eq('flat_id', flatId)
       .eq('poll_date', todayIst)
-      .maybeSingle();
+      .eq('flat_meal_id', mealId!)
+      .maybeSingle()
+      .throwOnError();
 
-    if (!pollRow) {
-      setCart(null);
-      return;
-    }
+    if (!pollRow) return null;
 
     const [
       { data: mainOptionRows },
@@ -110,38 +138,61 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
         .from('poll_options')
         .select('recipe_id, position, recipes(name, cuisine, diet_class, kind)')
         .eq('poll_id', pollRow.id)
-        .order('position'),
+        .order('position')
+        .throwOnError(),
       supabase
         .from('poll_accompaniment_options')
         .select('recipe_id, position, recipes(name, cuisine, diet_class, kind)')
         .eq('poll_id', pollRow.id)
-        .order('position'),
+        .order('position')
+        .throwOnError(),
       supabase
         .from('cart_items')
-        .select('recipe_id, quantity, recipes(name, cuisine, diet_class, kind), profiles:updated_by(display_name)')
-        .eq('poll_id', pollRow.id),
-      supabase.from('flat_members').select('user_id').eq('flat_id', flatId),
+        .select(
+          'recipe_id, quantity, recipes(name, cuisine, diet_class, kind), profiles:updated_by(display_name)',
+        )
+        .eq('poll_id', pollRow.id)
+        .throwOnError(),
+      supabase
+        .from('flat_members')
+        .select('user_id')
+        .eq('flat_id', flatId)
+        .throwOnError(),
       supabase
         .from('day_attendance')
         .select('user_id, is_out')
         .eq('flat_id', flatId)
-        .eq('poll_date', todayIst),
+        .eq('poll_date', todayIst)
+        .eq('flat_meal_id', mealId!)
+        .throwOnError(),
       supabase
         .from('activity_log')
-        .select('id, created_at, event_type, detail, profiles:actor_id(display_name), recipes(name)')
+        .select(
+          'id, created_at, event_type, detail, profiles:actor_id(display_name), recipes(name)',
+        )
         .eq('poll_id', pollRow.id)
         .order('created_at', { ascending: false })
-        .limit(50),
-      supabase.from('flats').select('max_mains, max_accompaniments').eq('id', flatId).single(),
+        .limit(50)
+        .throwOnError(),
+      supabase
+        .from('flats')
+        .select('max_mains, max_accompaniments')
+        .eq('id', flatId)
+        .single()
+        .throwOnError(),
     ]);
 
-    const outUserIds = new Set((attendanceRows ?? []).filter((a) => a.is_out).map((a) => a.user_id));
+    const outUserIds = new Set(
+      (attendanceRows ?? []).filter((a) => a.is_out).map((a) => a.user_id),
+    );
     const memberCount = (memberRows ?? []).length;
-    setHeadcount(Math.max(memberCount - outUserIds.size, 0));
 
     const cartRecipeIds = new Set((cartRows ?? []).map((row) => row.recipe_id));
 
-    const suggestions: SuggestionView[] = [...(mainOptionRows ?? []), ...(accompanimentOptionRows ?? [])]
+    const suggestions: SuggestionView[] = [
+      ...(mainOptionRows ?? []),
+      ...(accompanimentOptionRows ?? []),
+    ]
       .filter((row) => row.recipes !== null)
       .map((row) => ({
         recipeId: row.recipe_id,
@@ -168,7 +219,7 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
       .map((row) => toActivityEntry(row as unknown as ActivityLogRow))
       .filter((entry): entry is ActivityEntry => entry !== null);
 
-    setCart({
+    return {
       pollId: pollRow.id,
       flatMealId: pollRow.flat_meal_id,
       pollDate: pollRow.poll_date,
@@ -181,15 +232,18 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
       isLocked: pollRow.status !== 'open',
       maxMains: flatRow?.max_mains ?? null,
       maxAccompaniments: flatRow?.max_accompaniments ?? null,
-    });
-  }, [flatId, userId]);
+    };
+  }, [flatId, userId, mealId, pollDate]);
+  const {
+    data: cart,
+    error,
+    reload: load,
+  } = useResource(`cart:${flatId}:${mealId}:${pollDate}:${userId}`, fetcher);
+  const headcount = cart?.headcount ?? 0;
 
+  const subscribedPollId = cart?.pollId;
   useEffect(() => {
-    void Promise.resolve().then(load);
-  }, [load]);
-
-  useEffect(() => {
-    if (!cart) return;
+    if (!subscribedPollId) return;
 
     // supabase.channel(topic) returns the SAME already-subscribed instance
     // if a channel with this topic is still registered client-side —
@@ -204,13 +258,15 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
     // replacement, and bail out via `cancelled` if this effect was torn
     // down again in the meantime (StrictMode-style double-invoke, or the
     // pollId changing again mid-teardown).
-    const pollId = cart.pollId;
-    const topic = `cart:${pollId}`;
+    const pollId = subscribedPollId;
+    const topic = `cart:${pollId}:${channelId}`;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | undefined;
 
     async function setup() {
-      const stale = supabase.getChannels().find((c) => c.topic === `realtime:${topic}`);
+      const stale = supabase
+        .getChannels()
+        .find((c) => c.topic === `realtime:${topic}`);
       if (stale) await supabase.removeChannel(stale);
       if (cancelled) return;
 
@@ -218,27 +274,54 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
         .channel(topic)
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'cart_items', filter: `poll_id=eq.${pollId}` },
+          {
+            event: '*',
+            schema: 'public',
+            table: 'cart_items',
+            filter: `poll_id=eq.${pollId}`,
+          },
           () => {
             load();
-          }
+          },
         )
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'activity_log', filter: `poll_id=eq.${pollId}` },
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'activity_log',
+            filter: `poll_id=eq.${pollId}`,
+          },
           () => {
             load();
-          }
+          },
         )
         // Poll status changes (close, dispatch) — without this, a client
         // that loaded the cart while it was still 'open' never learns it
         // locked until something else triggers a refetch.
         .on(
           'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'daily_polls', filter: `id=eq.${pollId}` },
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'daily_polls',
+            filter: `id=eq.${pollId}`,
+          },
           () => {
             load();
-          }
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'day_attendance',
+            filter: `flat_meal_id=eq.${mealId}`,
+          },
+          () => {
+            void load();
+          },
         )
         .subscribe();
     }
@@ -249,15 +332,15 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
       cancelled = true;
       if (channel) supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- resubscribing on every `load` identity change would tear down/recreate the channel needlessly; cart.pollId is the only thing that should retrigger this.
-  }, [cart?.pollId]);
+  }, [subscribedPollId, load, mealId, channelId]);
 
   // Best-effort: a failed log insert should never block the cart mutation
   // it's describing, so errors are swallowed rather than surfaced to the
   // caller (the feed just misses an entry — no user-facing consequence).
   function logActivity(entry: {
     pollId: string;
-    eventType: 'cart_add' | 'cart_remove' | 'cart_quantity_change' | 'attendance_change';
+    eventType:
+      'cart_add' | 'cart_remove' | 'cart_quantity_change' | 'attendance_change';
     recipeId?: string;
     detail?: Json;
   }) {
@@ -279,16 +362,20 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
   async function addToCart(recipeId: string) {
     if (!cart || !userId) return;
     const freshHeadcount = await fetchHeadcount(cart.pollDate);
-    await supabase.from('cart_items').upsert(
-      {
-        poll_id: cart.pollId,
-        recipe_id: recipeId,
-        quantity: Math.max(freshHeadcount, 1),
-        added_by: userId,
-        updated_by: userId,
-      },
-      { onConflict: 'poll_id,recipe_id', ignoreDuplicates: true }
-    );
+    if (freshHeadcount === 0) throw new Error('Nobody is eating this meal.');
+    await supabase
+      .from('cart_items')
+      .upsert(
+        {
+          poll_id: cart.pollId,
+          recipe_id: recipeId,
+          quantity: Math.max(freshHeadcount, 1),
+          added_by: userId,
+          updated_by: userId,
+        },
+        { onConflict: 'poll_id,recipe_id', ignoreDuplicates: true },
+      )
+      .throwOnError();
     logActivity({ pollId: cart.pollId, eventType: 'cart_add', recipeId });
     await load();
   }
@@ -298,7 +385,10 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
   // out" in the few seconds since last load). Returns whether the
   // requested quantity got capped, so callers (the + stepper) can tell the
   // user why a tap did nothing rather than failing silently.
-  async function setQuantity(recipeId: string, quantity: number): Promise<{ capped: boolean; headcount: number }> {
+  async function setQuantity(
+    recipeId: string,
+    quantity: number,
+  ): Promise<{ capped: boolean; headcount: number }> {
     if (!cart || !userId) return { capped: false, headcount: 0 };
     if (quantity <= 0) {
       await removeFromCart(recipeId);
@@ -308,12 +398,21 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
     const cap = Math.max(freshHeadcount, 1);
     const capped = Math.min(quantity, cap);
     const wasCapped = quantity > cap;
-    const previousQty = cart.cartLines.find((line) => line.recipeId === recipeId)?.quantity;
+    const previousQty = cart.cartLines.find(
+      (line) => line.recipeId === recipeId,
+    )?.quantity;
     await supabase
       .from('cart_items')
-      .update({ quantity: capped, updated_by: userId, updated_at: new Date().toISOString() })
+      .update({
+        quantity: capped,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      })
       .eq('poll_id', cart.pollId)
-      .eq('recipe_id', recipeId);
+      .eq('recipe_id', recipeId)
+      .select('recipe_id')
+      .single()
+      .throwOnError();
     if (previousQty !== undefined && previousQty !== capped) {
       logActivity({
         pollId: cart.pollId,
@@ -328,23 +427,33 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
 
   async function removeFromCart(recipeId: string) {
     if (!cart) return;
-    await supabase.from('cart_items').delete().eq('poll_id', cart.pollId).eq('recipe_id', recipeId);
+    await supabase
+      .from('cart_items')
+      .delete()
+      .eq('poll_id', cart.pollId)
+      .eq('recipe_id', recipeId)
+      .select('recipe_id')
+      .single()
+      .throwOnError();
     logActivity({ pollId: cart.pollId, eventType: 'cart_remove', recipeId });
     await load();
   }
 
   async function setOutToday(isOut: boolean, reason?: string) {
     if (!flatId || !userId || !cart) return;
-    const todayIst = new Date(Date.now() + (5 * 60 + 30) * 60000).toISOString().slice(0, 10);
+    const todayIst = pollDate;
     // day_attendance keys on the meal as of the per-meal migration, so
     // being out for one meal no longer marks you out for the whole day.
-    await supabase.from('day_attendance').upsert({
-      flat_id: flatId,
-      flat_meal_id: cart.flatMealId,
-      user_id: userId,
-      poll_date: todayIst,
-      is_out: isOut,
-    });
+    await supabase
+      .from('day_attendance')
+      .upsert({
+        flat_id: flatId,
+        flat_meal_id: cart.flatMealId,
+        user_id: userId,
+        poll_date: todayIst,
+        is_out: isOut,
+      })
+      .throwOnError();
     if (cart) {
       logActivity({
         pollId: cart.pollId,
@@ -361,21 +470,32 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
   // forbids, same rule the daily suggestions already enforce server-side.
   // Unlike create_poll, search has no 10-day exclusion or variety heuristic
   // — those shape the day's curated picks, not an open-ended lookup.
-  async function searchRecipes(kind: RecipeKind, query: string): Promise<SuggestionView[]> {
+  async function searchRecipes(
+    kind: RecipeKind,
+    query: string,
+  ): Promise<SuggestionView[]> {
     if (!flatId || query.trim().length < 2) return [];
 
     const [{ data: memberRows }, { data: recipeRows }] = await Promise.all([
       supabase
         .from('flat_members')
         .select('profiles(diet_type, is_jain, allergies)')
-        .eq('flat_id', flatId),
+        .eq('flat_id', flatId)
+        .throwOnError(),
       supabase
         .from('recipes')
-        .select('id, name, cuisine, diet_class, jain_ok, allergens, kind')
+        .select(
+          'id, name, cuisine, diet_class, jain_ok, allergens, kind, suitable_bases',
+        )
         .eq('kind', kind)
+        .contains(
+          'suitable_bases',
+          kind === 'main' ? [activeMeal?.basis ?? 'full'] : [],
+        )
         .eq('is_active', true)
         .ilike('name', `%${query.trim()}%`)
-        .limit(20),
+        .limit(20)
+        .throwOnError(),
     ]);
 
     const members = (memberRows ?? [])
@@ -387,14 +507,27 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
       }));
     if (members.length === 0) return [];
 
-    const flatDietCeiling = Math.min(...members.map((m) => DIET_RANK[m.dietType] ?? DIET_RANK.nonveg));
+    const flatDietCeiling = Math.min(
+      ...members.map((m) => DIET_RANK[m.dietType] ?? DIET_RANK.nonveg),
+    );
     const anyJainMember = members.some((m) => m.isJain);
     const unionAllergies = new Set(members.flatMap((m) => m.allergies));
 
-    const cartRecipeIds = new Set((cart?.cartLines ?? []).map((line) => line.recipeId));
+    const cartRecipeIds = new Set(
+      (cart?.cartLines ?? []).map((line) => line.recipeId),
+    );
 
     return (recipeRows ?? [])
-      .filter((r) => (DIET_RANK[r.diet_class as DietType] ?? DIET_RANK.nonveg) <= flatDietCeiling)
+      .filter(
+        (r) =>
+          r.kind !== 'main' ||
+          r.suitable_bases.includes(activeMeal?.basis ?? 'full'),
+      )
+      .filter(
+        (r) =>
+          (DIET_RANK[r.diet_class as DietType] ?? DIET_RANK.nonveg) <=
+          flatDietCeiling,
+      )
       .filter((r) => !anyJainMember || r.jain_ok)
       .filter((r) => !r.allergens.some((a) => unionAllergies.has(a)))
       .map((r) => ({
@@ -414,25 +547,43 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
   // not server-auto-applied: close_poll only locks the cart, it never
   // writes a fallback itself, so this exists purely for the app to offer
   // one when the user opts in.
-  async function getFallbackSuggestions(): Promise<{ main: SuggestionView | null; accompaniment: SuggestionView | null }> {
+  async function getFallbackSuggestions(): Promise<{
+    main: SuggestionView | null;
+    accompaniment: SuggestionView | null;
+  }> {
     if (!flatId) return { main: null, accompaniment: null };
 
-    const [{ data: memberRows }, { data: mainRows }, { data: accompanimentRows }] = await Promise.all([
-      supabase.from('flat_members').select('profiles(diet_type, is_jain, allergies)').eq('flat_id', flatId),
+    const [
+      { data: memberRows },
+      { data: mainRows },
+      { data: accompanimentRows },
+    ] = await Promise.all([
+      supabase
+        .from('flat_members')
+        .select('profiles(diet_type, is_jain, allergies)')
+        .eq('flat_id', flatId)
+        .throwOnError(),
       supabase
         .from('recipes')
-        .select('id, name, cuisine, diet_class, jain_ok, allergens, kind')
+        .select(
+          'id, name, cuisine, diet_class, jain_ok, allergens, kind, suitable_bases',
+        )
         .eq('kind', 'main')
+        .contains('suitable_bases', [activeMeal?.basis ?? 'full'])
         .eq('is_active', true)
         .order('name')
-        .limit(50),
+        .limit(50)
+        .throwOnError(),
       supabase
         .from('recipes')
-        .select('id, name, cuisine, diet_class, jain_ok, allergens, kind')
+        .select(
+          'id, name, cuisine, diet_class, jain_ok, allergens, kind, suitable_bases',
+        )
         .eq('kind', 'accompaniment')
         .eq('is_active', true)
         .order('name')
-        .limit(50),
+        .limit(50)
+        .throwOnError(),
     ]);
 
     const members = (memberRows ?? [])
@@ -444,13 +595,24 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
       }));
     if (members.length === 0) return { main: null, accompaniment: null };
 
-    const flatDietCeiling = Math.min(...members.map((m) => DIET_RANK[m.dietType] ?? DIET_RANK.nonveg));
+    const flatDietCeiling = Math.min(
+      ...members.map((m) => DIET_RANK[m.dietType] ?? DIET_RANK.nonveg),
+    );
     const anyJainMember = members.some((m) => m.isJain);
     const unionAllergies = new Set(members.flatMap((m) => m.allergies));
 
     function firstEligible(rows: typeof mainRows): SuggestionView | null {
       const eligible = (rows ?? [])
-        .filter((r) => (DIET_RANK[r.diet_class as DietType] ?? DIET_RANK.nonveg) <= flatDietCeiling)
+        .filter(
+          (r) =>
+            r.kind !== 'main' ||
+            r.suitable_bases.includes(activeMeal?.basis ?? 'full'),
+        )
+        .filter(
+          (r) =>
+            (DIET_RANK[r.diet_class as DietType] ?? DIET_RANK.nonveg) <=
+            flatDietCeiling,
+        )
         .filter((r) => !anyJainMember || r.jain_ok)
         .filter((r) => !r.allergens.some((a) => unionAllergies.has(a)))[0];
       if (!eligible) return null;
@@ -464,7 +626,10 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
       };
     }
 
-    return { main: firstEligible(mainRows), accompaniment: firstEligible(accompanimentRows) };
+    return {
+      main: firstEligible(mainRows),
+      accompaniment: firstEligible(accompanimentRows),
+    };
   }
 
   // addToCart can't be reused here: cart_items' RLS only allows writes
@@ -480,7 +645,12 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
       p_quantity: Math.max(headcount, 1),
     });
     if (!error) {
-      logActivity({ pollId: cart.pollId, eventType: 'cart_add', recipeId, detail: { fallback: true } });
+      logActivity({
+        pollId: cart.pollId,
+        eventType: 'cart_add',
+        recipeId,
+        detail: { fallback: true },
+      });
       await load();
     }
     return { error };
@@ -488,6 +658,7 @@ export function useTodayCart(flatId: string | null | undefined, userId: string |
 
   return {
     cart,
+    error,
     headcount,
     addToCart,
     setQuantity,

@@ -1,32 +1,44 @@
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { useColorScheme } from 'react-native';
-
-import { Colors } from '@/constants/theme';
-
+import { Tabs } from 'expo-router';
+import { Text, useColorScheme } from 'react-native';
+import { Colors, Fonts } from '@/constants/theme';
 export default function AppTabs() {
   const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme] ?? Colors.light;
-
+  const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
   return (
-    <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Today</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/home.png')}
-          renderingMode="template"
-        />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="settings">
-        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
-          renderingMode="template"
-        />
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.accentText,
+        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarStyle: {
+          backgroundColor: colors.background,
+          borderTopColor: colors.divider,
+          height: 72,
+          paddingTop: 8,
+          paddingBottom: 8,
+        },
+        tabBarLabelStyle: { fontFamily: Fonts.bodyBold, fontSize: 12 },
+        sceneStyle: { backgroundColor: colors.background },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Today',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ color, fontSize: 26 }}>⌂</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ color, fontSize: 23 }}>⚙</Text>
+          ),
+        }}
+      />
+    </Tabs>
   );
 }

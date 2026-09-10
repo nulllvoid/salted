@@ -1,209 +1,146 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Switch, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
+import { View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import {
+  Toggle,
+  Button,
+  Card,
+  Chip,
+  Empty,
+  Field,
+  Loading,
+  Notice,
+  Screen,
+  ui,
+} from '@/components/ui';
 import { useProfile } from '@/hooks/use-profile';
 import { useSession } from '@/hooks/use-session';
-import { useTheme } from '@/hooks/use-theme';
-import { DIET_ORDER, dietHelperText, dietLabel } from '@/lib/diet-copy';
+import { useAction } from '@/hooks/use-action';
+import { DIET_ORDER, dietLabel } from '@/lib/diet-copy';
 import type { Tables, TablesUpdate } from '@/types/database';
-import type { Allergen } from '@/types/domain';
-
-const ALLERGY_OPTIONS: Allergen[] = ['peanut', 'dairy', 'gluten', 'shellfish', 'soy'];
-
-// Onboarding "about you": display name + dietary profile, before any
-// household setup exists (design doc: user onboarding is separate from
-// create/join). Writes the same profiles columns Settings edits.
-export default function OnboardingProfileScreen() {
+export default function ProfileScreen() {
   const session = useSession();
-  const { profile, updateProfile } = useProfile(session?.user.id);
-
+  const { profile, error, updateProfile, reload } = useProfile(
+    session?.user.id,
+  );
+  if (error)
+    return (
+      <Screen>
+        <Empty
+          title="Couldn’t load your profile"
+          detail={error}
+          action="Try again"
+          onAction={() => {
+            void reload();
+          }}
+        />
+      </Screen>
+    );
+  if (!profile)
+    return (
+      <Screen>
+        <Loading label="Getting your profile ready…" />
+      </Screen>
+    );
   return (
-    <ProfileForm
-      key={profile?.id ?? 'loading'}
-      profile={profile ?? null}
-      updateProfile={updateProfile}
-    />
+    <ProfileForm key={profile.id} profile={profile} save={updateProfile} />
   );
 }
-
-// Mounted with key={profile.id} so the name field initializes from the
-// loaded profile once (useState initializer), same pattern as Settings'
-// CookSection.
 function ProfileForm({
   profile,
-  updateProfile,
+  save,
 }: {
-  profile: Tables<'profiles'> | null;
-  updateProfile: (patch: TablesUpdate<'profiles'>) => Promise<{ error: unknown } | undefined>;
+  profile: Tables<'profiles'>;
+  save: (p: TablesUpdate<'profiles'>) => Promise<unknown>;
 }) {
   const router = useRouter();
-  const theme = useTheme();
-  const [name, setName] = useState(profile?.display_name ?? '');
-
-  function toggleAllergy(allergy: Allergen) {
-    if (!profile) return;
-    const has = profile.allergies.includes(allergy);
-    const next = has ? profile.allergies.filter((a) => a !== allergy) : [...profile.allergies, allergy];
-    void updateProfile({ allergies: next });
-  }
-
-  async function next() {
-    const trimmed = name.trim();
-    if (trimmed && trimmed !== profile?.display_name) {
-      await updateProfile({ display_name: trimmed });
-    }
-    router.push('/onboarding/choose');
-  }
-
+  const [name, setName] = useState(profile.display_name);
+  const [diet, setDiet] = useState(profile.diet_type);
+  const [jain, setJain] = useState(profile.is_jain);
+  const [allergies, setAllergies] = useState(profile.allergies);
+  const action = useAction();
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ThemedView style={styles.container}>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.kicker}>
-          About you
-        </ThemedText>
-        <ThemedText type="title" style={styles.heading}>
-          what do you eat?
-        </ThemedText>
-        <ThemedText type="default" themeColor="textSecondary">
-          This filters whatever lands in the cart, so be honest, not dramatic.
-        </ThemedText>
-
-        <TextInput
-          placeholder="Your name"
-          placeholderTextColor={theme.textSecondary}
+    <Screen>
+      <ThemedText type="smallBold" themeColor="accentText">
+        FIRST, A LITTLE ABOUT YOU
+      </ThemedText>
+      <ThemedText type="title">Made for your taste.</ThemedText>
+      <ThemedText themeColor="textSecondary">
+        Help us suggest dishes that work for you and your housemates.
+      </ThemedText>
+      <Card>
+        <Field
+          label="Your name"
           value={name}
           onChangeText={setName}
-          style={[styles.input, { borderColor: theme.divider, color: theme.text, backgroundColor: theme.backgroundElement }]}
+          maxLength={60}
         />
-
-        <ThemedView style={styles.segRow}>
-          {DIET_ORDER.map((value) => {
-            const selected = profile?.diet_type === value;
-            return (
-              <Pressable
-                key={value}
-                onPress={() => void updateProfile({ diet_type: value })}
-                style={[
-                  styles.segOption,
-                  { borderColor: theme.divider },
-                  selected && { backgroundColor: theme.accent, borderColor: theme.accent },
-                ]}>
-                <ThemedText type="smallBold" style={selected ? { color: theme.background } : undefined}>
-                  {dietLabel(value)}
-                </ThemedText>
-              </Pressable>
-            );
-          })}
-        </ThemedView>
-        <ThemedText type="small" themeColor="textSecondary">
-          {dietHelperText()}
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.jainRow}>
-          <ThemedText type="default">Jain — no onion, no garlic</ThemedText>
-          <Switch
-            value={profile?.is_jain ?? false}
-            onValueChange={(value) => void updateProfile({ is_jain: value })}
+        <ThemedText type="smallBold">What do you eat?</ThemedText>
+        <View style={ui.wrap}>
+          {DIET_ORDER.map((value) => (
+            <Chip
+              key={value}
+              selected={diet === value}
+              onPress={() => setDiet(value)}
+            >
+              {dietLabel(value)}
+            </Chip>
+          ))}
+        </View>
+        <View style={ui.row}>
+          <ThemedText>Jain food</ThemedText>
+          <Toggle
+            accessibilityLabel="Jain food"
+            value={jain}
+            onValueChange={setJain}
           />
-        </ThemedView>
-
-        <ThemedText type="small" themeColor="textSecondary" style={styles.kicker}>
-          Allergies — these are absolute
+        </View>
+      </Card>
+      <Card>
+        <ThemedText type="smallBold">Any allergies?</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          We exclude dishes containing these ingredients from suggestions.
         </ThemedText>
-        <ThemedView style={styles.chipRow}>
-          {ALLERGY_OPTIONS.map((allergy) => {
-            const selected = profile?.allergies.includes(allergy) ?? false;
-            return (
-              <Pressable
-                key={allergy}
-                onPress={() => toggleAllergy(allergy)}
-                style={[
-                  styles.chip,
-                  { borderColor: theme.divider },
-                  selected && { backgroundColor: theme.accent, borderColor: theme.accent },
-                ]}>
-                <ThemedText type="small" style={selected ? { color: theme.background } : undefined}>
-                  {allergy}
-                </ThemedText>
-              </Pressable>
-            );
-          })}
-        </ThemedView>
-
-        <Pressable style={[styles.primaryButton, { backgroundColor: theme.accent }]} onPress={() => void next()}>
-          <ThemedText type="smallBold" style={[styles.primaryButtonText, { color: theme.background }]}>
-            Next
-          </ThemedText>
-        </Pressable>
-      </ThemedView>
-    </SafeAreaView>
+        <View style={ui.wrap}>
+          {['peanut', 'dairy', 'gluten', 'shellfish', 'soy'].map((allergy) => (
+            <Chip
+              key={allergy}
+              selected={allergies.includes(allergy)}
+              onPress={() =>
+                setAllergies((a) =>
+                  a.includes(allergy)
+                    ? a.filter((v) => v !== allergy)
+                    : [...a, allergy],
+                )
+              }
+            >
+              {allergy}
+            </Chip>
+          ))}
+        </View>
+      </Card>
+      {action.error && <Notice error>{action.error}</Notice>}
+      <Button
+        disabled={!name.trim()}
+        busy={action.pending}
+        onPress={() => {
+          void action
+            .run(() =>
+              save({
+                display_name: name.trim(),
+                diet_type: diet,
+                is_jain: jain,
+                allergies,
+              }),
+            )
+            .then((ok) => {
+              if (ok) router.replace('/onboarding/choose');
+            });
+        }}
+      >
+        Save and continue
+      </Button>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: {
-    flex: 1,
-    padding: Spacing.four,
-    gap: Spacing.three,
-  },
-  kicker: {
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heading: {
-    fontSize: 34,
-    lineHeight: 38,
-  },
-  input: {
-    borderWidth: 1.5,
-    borderRadius: Radius.pill,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.four,
-    fontSize: 16,
-    fontFamily: Fonts.body,
-  },
-  segRow: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-  },
-  segOption: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.pill,
-    borderWidth: 1.5,
-  },
-  jainRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
-  },
-  chip: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.pill,
-    borderWidth: 1.5,
-  },
-  primaryButton: {
-    marginTop: 'auto',
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    fontFamily: Fonts.bodyBold,
-  },
-});

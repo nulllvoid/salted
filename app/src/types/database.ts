@@ -871,6 +871,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_household: { Args: { p_name: string; p_meals: string[] }; Returns: string }
+      join_household: { Args: { p_code: string }; Returns: string }
+      set_grocery_checked: { Args: { p_sources: Json; p_checked: boolean }; Returns: undefined }
+
       is_flat_member: { Args: { target_flat_id: string }; Returns: boolean }
       take_fallback_cart_item: {
         Args: { p_poll_id: string; p_quantity: number; p_recipe_id: string }

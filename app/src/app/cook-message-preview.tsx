@@ -1,103 +1,118 @@
 import { useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
+import { Linking } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { Button, Card, Empty, Loading, Notice, Screen } from '@/components/ui';
 import { useActiveGroup } from '@/contexts/active-group';
 import { useCookDispatch } from '@/hooks/use-cook-dispatch';
-import { mealNounList } from '@/lib/meal-copy';
-
-export default function CookMessagePreviewScreen() {
-  const { activeGroup } = useActiveGroup();
-  const flatId = activeGroup?.id;
-  const meals = activeGroup?.meals ?? ['dinner'];
-  const { dispatch } = useCookDispatch(flatId);
-  const [showEnglish, setShowEnglish] = useState(false);
-
-  if (dispatch === undefined) {
-    return null; // loading
-  }
-
-  if (dispatch === null) {
-    return (
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <ThemedView style={styles.container}>
-          <ThemedText type="subtitle">No cook message yet</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            This shows up once the {mealNounList(meals)} cart locks and a cook is set in Settings.
-          </ThemedText>
-        </ThemedView>
-      </SafeAreaView>
-    );
-  }
-
-  const isPreDispatch = dispatch.status === 'queued';
-  const failed = dispatch.status === 'failed';
-  const body = showEnglish ? dispatch.payloadEn : dispatch.payloadTranslated;
-
-  function openWhatsAppFallback() {
-    if (!dispatch) return;
-    const text = encodeURIComponent(dispatch.payloadTranslated || dispatch.payloadEn);
-    Linking.openURL(`https://wa.me/${dispatch.cookPhone.replace('+', '')}?text=${text}`);
-  }
-
+import { useAction } from '@/hooks/use-action';
+import { useRouter } from 'expo-router';
+const LABELS = {
+  queued: 'Waiting for the message to be prepared',
+  mocked: 'Ready to send yourself',
+  sent: 'Sent to WhatsApp',
+  delivered: 'Delivered to your cook',
+  failed: 'Automatic sending didn’t complete',
+};
+export default function CookMessageScreen() {
+  const { activeGroup, activeMeal } = useActiveGroup();
+  const { dispatch, error, reload } = useCookDispatch(activeGroup?.id);
+  const [english, setEnglish] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const action = useAction();
+  const router = useRouter();
+  const body = dispatch
+    ? english
+      ? dispatch.payloadEn
+      : dispatch.payloadTranslated || dispatch.payloadEn
+    : '';
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <ThemedView style={styles.headerRow}>
-          <ThemedText type="smallBold" themeColor="textSecondary">
-            {isPreDispatch ? 'Will be sent at dispatch time' : `Status: ${dispatch.status}`}
-          </ThemedText>
-          {!isPreDispatch && (
-            <Pressable onPress={() => setShowEnglish((v) => !v)}>
-              <ThemedText type="linkPrimary">{showEnglish ? 'Show translated' : 'Show English'}</ThemedText>
-            </Pressable>
+    <Screen>
+      <ThemedText type="smallBold" themeColor="accentText">
+        FROM YOUR TABLE TO THE KITCHEN
+      </ThemedText>
+      <ThemedText type="title">A clear plan.</ThemedText>
+      <ThemedText themeColor="textSecondary">
+        {activeMeal?.name} instructions for {dispatch?.cookName ?? 'your cook'}.
+      </ThemedText>
+      {(error || action.error) && (
+        <Notice error>{error || action.error}</Notice>
+      )}
+      {dispatch === undefined && !error && (
+        <Loading label="Checking your cook’s message…" />
+      )}
+      {dispatch === null && (
+        <Empty
+          title="Let’s get your cook ready"
+          detail="A message needs a scheduled meal and a cook’s contact details. Check that both are set up."
+          action="Open settings"
+          onAction={() => router.push('/(tabs)/settings')}
+        />
+      )}
+      {dispatch && (
+        <>
+          <Notice>{LABELS[dispatch.status]}</Notice>
+          {dispatch.status === 'queued' ? (
+            <Card>
+              <ThemedText>
+                The message is prepared at your meal’s scheduled message time.
+                Come back then to review and send it.
+              </ThemedText>
+            </Card>
+          ) : (
+            <>
+              <Card>
+                <ThemedText selectable>{body}</ThemedText>
+              </Card>
+              <Button secondary onPress={() => setEnglish((v) => !v)}>
+                {english ? 'Show cook’s language' : 'Show English'}
+              </Button>
+              {(dispatch.status === 'mocked' ||
+                dispatch.status === 'failed') && (
+                <Notice>
+                  Automatic delivery is not available for this message. Open
+                  WhatsApp below, review it, and tap Send.
+                </Notice>
+              )}
+              <Button
+                disabled={!body}
+                busy={action.pending}
+                onPress={() => {
+                  void action.run(() =>
+                    Linking.openURL(
+                      `https://wa.me/${dispatch.cookPhone.replace(/\D/g, '')}?text=${encodeURIComponent(body)}`,
+                    ),
+                  );
+                }}
+              >
+                {dispatch.status === 'sent' || dispatch.status === 'delivered'
+                  ? 'Open message in WhatsApp again'
+                  : 'Open WhatsApp to send'}
+              </Button>
+              <Button
+                secondary
+                disabled={!body}
+                onPress={() => {
+                  void action.run(async () => {
+                    await Clipboard.setStringAsync(body);
+                    setCopied(true);
+                  });
+                }}
+              >
+                {copied ? 'Message copied' : 'Copy message'}
+              </Button>
+            </>
           )}
-        </ThemedView>
-
-        <ThemedView type="backgroundElement" style={styles.messageBox}>
-          <ThemedText type="default">
-            {isPreDispatch ? `Cook: ${dispatch.cookName}\nMessage composes at dispatch time.` : body}
-          </ThemedText>
-        </ThemedView>
-
-        {failed && (
-          <Pressable style={styles.whatsAppButton} onPress={openWhatsAppFallback}>
-            <ThemedText type="smallBold" style={styles.whatsAppButtonText}>
-              Send it yourself on WhatsApp
-            </ThemedText>
-          </Pressable>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+        </>
+      )}
+      <Button
+        secondary
+        onPress={() => {
+          void reload();
+        }}
+      >
+        Refresh message status
+      </Button>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: {
-    padding: Spacing.four,
-    gap: Spacing.three,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  messageBox: {
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-  },
-  whatsAppButton: {
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.pill,
-    backgroundColor: '#25D366',
-    alignItems: 'center',
-  },
-  whatsAppButtonText: {
-    fontFamily: Fonts.bodyBold,
-    color: '#ffffff',
-  },
-});

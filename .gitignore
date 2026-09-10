@@ -12,6 +12,9 @@ app/expo-env.d.ts
 app/*.tsbuildinfo
 app/ios/
 app/android/
+app/e2e/artifacts/
+supabase/.temp/root.crt
+supabase/.temp/cli-latest
 
 # OS
 .DS_Store

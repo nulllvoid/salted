@@ -1,79 +1,93 @@
-import { useCallback, useEffect, useState } from 'react';
-
+import { useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useResource } from './use-resource';
 import type { Tables, TablesUpdate } from '@/types/database';
-
-type Flat = Tables<'flats'>;
-type Cook = Tables<'cooks'>;
-type Member = { userId: string; displayName: string; role: string };
-
 export interface FlatSettingsData {
-  flat: Flat;
-  members: Member[];
-  cook: Cook | null;
+  flat: Tables<'flats'>;
+  members: { userId: string; displayName: string; role: string }[];
+  cook: Tables<'cooks'> | null;
 }
-
-// Flat-level settings: the flat row itself (name, invite code, poll timings),
-// its member list, and the active cook (docs/03-mvp-spec.md §S3 "Flat"
-// section + "Cook" card). One active cook per flat, enforced by a partial
-// unique index (docs/05-schema.sql).
 export function useFlatSettings(flatId: string | null | undefined) {
-  const [data, setData] = useState<FlatSettingsData | null | undefined>(undefined); // undefined = loading
-
-  const load = useCallback(async () => {
-    if (!flatId) {
-      setData(null);
-      return;
-    }
-
-    const [{ data: flatRow }, { data: memberRows }, { data: cookRow }] = await Promise.all([
-      supabase.from('flats').select('*').eq('id', flatId).single(),
-      supabase.from('flat_members').select('user_id, role, profiles(display_name)').eq('flat_id', flatId),
-      supabase.from('cooks').select('*').eq('flat_id', flatId).eq('is_active', true).maybeSingle(),
+  const fetcher = useCallback(async (): Promise<FlatSettingsData | null> => {
+    if (!flatId) return null;
+    const [flat, members, cook] = await Promise.all([
+      supabase
+        .from('flats')
+        .select('*')
+        .eq('id', flatId)
+        .single()
+        .throwOnError(),
+      supabase
+        .from('flat_members')
+        .select('user_id, role, profiles(display_name)')
+        .eq('flat_id', flatId)
+        .throwOnError(),
+      supabase
+        .from('cooks')
+        .select('*')
+        .eq('flat_id', flatId)
+        .eq('is_active', true)
+        .maybeSingle()
+        .throwOnError(),
     ]);
-
-    if (!flatRow) {
-      setData(null);
-      return;
-    }
-
-    setData({
-      flat: flatRow,
-      members: (memberRows ?? []).map((m) => ({
+    if (!flat.data) return null;
+    return {
+      flat: flat.data,
+      members: (members.data ?? []).map((m) => ({
         userId: m.user_id,
         displayName: m.profiles?.display_name ?? 'Member',
         role: m.role,
       })),
-      cook: cookRow ?? null,
-    });
+      cook: cook.data,
+    };
   }, [flatId]);
-
-  useEffect(() => {
-    void Promise.resolve().then(load);
-  }, [load]);
-
+  const { data, error, reload } = useResource(`settings:${flatId}`, fetcher);
   async function updateFlat(patch: TablesUpdate<'flats'>) {
-    if (!flatId) return;
-    const { error } = await supabase.from('flats').update(patch).eq('id', flatId);
-    if (!error) await load();
-    return { error };
+    if (!flatId) throw new Error('No household selected');
+    await supabase
+      .from('flats')
+      .update(patch)
+      .eq('id', flatId)
+      .select('id')
+      .single()
+      .throwOnError();
+    await reload();
+    return { error: null };
   }
-
-  async function upsertCook(patch: { name: string; phone: string; language: string }) {
-    if (!flatId) return;
+  async function upsertCook(patch: {
+    name: string;
+    phone: string;
+    language: string;
+  }) {
+    if (!flatId) throw new Error('No household selected');
+    if (!/^\+[1-9]\d{7,14}$/.test(patch.phone) || !patch.name.trim())
+      throw new Error('Enter a name and international phone number');
     const existing = data?.cook;
-    const { error } = existing
-      ? await supabase.from('cooks').update(patch).eq('id', existing.id)
-      : await supabase.from('cooks').insert({ flat_id: flatId, ...patch });
-    if (!error) await load();
-    return { error };
+    if (existing)
+      await supabase
+        .from('cooks')
+        .update(patch)
+        .eq('id', existing.id)
+        .select('id')
+        .single()
+        .throwOnError();
+    else
+      await supabase
+        .from('cooks')
+        .insert({ flat_id: flatId, ...patch })
+        .throwOnError();
+    await reload();
+    return { error: null };
   }
-
   async function leaveFlat(userId: string) {
-    if (!flatId) return;
-    const { error } = await supabase.from('flat_members').delete().eq('flat_id', flatId).eq('user_id', userId);
-    return { error };
+    if (!flatId) throw new Error('No household selected');
+    await supabase
+      .from('flat_members')
+      .delete()
+      .eq('flat_id', flatId)
+      .eq('user_id', userId)
+      .throwOnError();
+    return { error: null };
   }
-
-  return { data, updateFlat, upsertCook, leaveFlat, reload: load };
+  return { data, error, updateFlat, upsertCook, leaveFlat, reload };
 }

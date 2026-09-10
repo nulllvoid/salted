@@ -1,918 +1,589 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { CollapsibleSection } from '@/components/collapsible-section';
+import { useEffect, useRef, useState } from 'react';
+import { Modal, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import {
+  Toggle,
+  Button,
+  Card,
+  Chip,
+  Empty,
+  Field,
+  Loading,
+  Notice,
+  Screen,
+  ui,
+} from '@/components/ui';
+import { CollapsibleSection } from '@/components/collapsible-section';
 import { useActiveGroup } from '@/contexts/active-group';
 import { useSession } from '@/hooks/use-session';
-import { useStreak } from '@/hooks/use-streak';
 import { useTheme } from '@/hooks/use-theme';
 import { useTodayCart } from '@/hooks/use-today-cart';
-import { mealMomentList, mealNounList, mealTitleList } from '@/lib/meal-copy';
-import type { ActivityEntry, CartLineView, MealType, RecipeKind, SuggestionView } from '@/types/domain';
-
-const TABS: RecipeKind[] = ['main', 'accompaniment', 'side'];
-const TAB_LABEL: Record<RecipeKind, string> = { main: 'Mains', accompaniment: 'With it', side: 'Sides' };
-const KIND_LABEL: Record<RecipeKind, string> = { main: 'Mains', accompaniment: 'Accompaniments', side: 'Sides' };
-const SEARCH_LABEL: Record<RecipeKind, string> = { main: 'a main course', accompaniment: 'an accompaniment', side: 'a side' };
-
-// Fixed dark-card palette for the locked-cart moment (mockup screen 12) —
-// deliberately theme-independent, same idea as the mockup's own --dk/--dks/
-// --dkl/--dkt/--dka tokens: this card looks the same whether the rest of
-// the app is in light or dark mode.
-const LOCKED_CARD = {
-  bg: '#1A1411',
-  surface: '#261D18',
-  divider: '#352822',
-  textSecondary: '#C5B7AC',
-  accent: '#FF9B62',
-};
+import { useAction } from '@/hooks/use-action';
+import { formatMealTime, istDate, mealMoment } from '@/lib/meal-schedule';
+import { friendlyError } from '@/lib/errors';
+import { dietLabel } from '@/lib/diet-copy';
+import type { CartLineView, RecipeKind, SuggestionView } from '@/types/domain';
+const CATEGORIES: { kind: RecipeKind; label: string }[] = [
+  { kind: 'main', label: 'Mains' },
+  { kind: 'accompaniment', label: 'Rice & breads' },
+  { kind: 'side', label: 'Sides' },
+];
 
 export default function TodayScreen() {
+  const { activeGroup, activeMeal, pollDate } = useActiveGroup();
+  return (
+    <TodayContent key={`${activeGroup?.id}:${activeMeal?.id}:${pollDate}`} />
+  );
+}
+function TodayContent() {
   const router = useRouter();
-  const session = useSession();
-  const { groups, activeGroup, setActiveGroupId } = useActiveGroup();
-  const flatId = activeGroup?.id;
-  const meals = activeGroup?.meals ?? ['dinner'];
+  const context = useActiveGroup();
   const {
-    cart,
-    headcount,
-    addToCart,
-    setQuantity,
-    removeFromCart,
-    setOutToday,
-    searchRecipes,
-    getFallbackSuggestions,
-    takeFallback,
-  } = useTodayCart(flatId, session?.user.id);
-  const { streak } = useStreak(flatId);
+    groups,
+    activeGroup,
+    activeMeal,
+    pollDate,
+    setActiveGroupId,
+    setActiveMealId,
+    setDayOffset,
+  } = context;
+  const session = useSession();
+  const state = useTodayCart(activeGroup?.id, session?.user.id);
+  const { cart, headcount } = state;
+  const action = useAction();
   const theme = useTheme();
-  const [activeTab, setActiveTab] = useState<RecipeKind>('main');
-  const [cappedRecipeId, setCappedRecipeId] = useState<string | null>(null);
+  const [category, setCategory] = useState<RecipeKind>('main');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [limitWarning, setLimitWarning] = useState<{ recipeId: string; recipeName: string; limit: number; count: number } | null>(
-    null
-  );
-
-  if (cart === undefined) {
-    return null; // loading
-  }
-
-  if (cart === null) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.container}>
-          <MealChips groups={groups} activeGroupId={activeGroup?.id} onSelect={setActiveGroupId} />
-          <ThemedText type="subtitle">No {mealNounList(meals)} suggestions yet</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            Suggestions land at your group&apos;s poll-open time.
-          </ThemedText>
-        </ThemedView>
-      </SafeAreaView>
-    );
-  }
-
-  const availableSuggestions = cart.suggestions.filter((s) => !s.inCart);
-  const suggestionsByKind = groupByKind(availableSuggestions);
-  const cartLinesByKind = groupByKind(cart.cartLines);
-
-  // Soft, warn-not-block cap (docs/05-schema.sql flats.max_mains /
-  // max_accompaniments) — 'accompaniment' and 'side' cart lines count
-  // toward the single combined max_accompaniments cap (Phase 4 decision:
-  // one column covers both, not a separate cap per kind).
-  async function addToCartWithLimitCheck(recipeId: string, recipeName: string) {
-    await addToCart(recipeId);
-    if (!cart) return;
-    const kind = [...cart.suggestions, ...cart.cartLines].find((r) => r.recipeId === recipeId)?.kind;
-    const limit = kind === 'main' ? cart.maxMains : cart.maxAccompaniments;
-    if (limit === null || limit === undefined) return;
-    const newCount =
-      kind === 'main'
-        ? cartLinesByKind.main.length + 1
-        : cartLinesByKind.accompaniment.length + cartLinesByKind.side.length + 1;
-    if (newCount > limit) {
-      setLimitWarning({ recipeId, recipeName, limit, count: newCount });
-    }
-  }
-
-  async function undoLimitWarning() {
-    if (!limitWarning) return;
-    await removeFromCart(limitWarning.recipeId);
-    setLimitWarning(null);
-  }
-
-  // Headcount is a hard cap, not the soft dish-count limit above — a
-  // quantity above headcount means more portions than people to eat them.
-  // setQuantity already silently caps server-side; this just surfaces why a
-  // + tap did nothing instead of leaving the user guessing.
-  async function incrementQuantity(recipeId: string, nextQuantity: number) {
-    const result = await setQuantity(recipeId, nextQuantity);
-    if (result.capped) {
-      setCappedRecipeId(recipeId);
-      setTimeout(() => setCappedRecipeId((current) => (current === recipeId ? null : current)), 2500);
-    }
-  }
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <MealChips groups={groups} activeGroupId={activeGroup?.id} onSelect={setActiveGroupId} />
-
-        <ThemedView style={styles.headerRow}>
-          <ThemedView>
-            <ThemedText type="subtitle">{mealTitleList(meals)}</ThemedText>
-            <Pressable onPress={() => router.push('/who-is-eating')}>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.headcountLink}>
-                {headcount} eating {mealMomentList(meals)}
-              </ThemedText>
-            </Pressable>
-          </ThemedView>
-        </ThemedView>
-
-        <ThemedView type="backgroundElement" style={styles.outToggleRow}>
-          <ThemedText type="default">I&apos;m out today</ThemedText>
-          <Switch value={cart.isOutToday} onValueChange={setOutToday} />
-        </ThemedView>
-
-        {cart.status === 'closed' && cart.cartLines.length === 0 && (
-          <EmptyCartAtLock
-            flatId={flatId}
-            meals={meals}
-            takeFallback={takeFallback}
-            getFallbackSuggestions={getFallbackSuggestions}
-          />
-        )}
-
-        {(cart.status === 'closed' || cart.status === 'dispatched') && cart.cartLines.length > 0 && (
-          <ThemedView style={[styles.lockedCard, { backgroundColor: LOCKED_CARD.bg }]}>
-            <ThemedText type="small" style={[styles.lockedKicker, { color: LOCKED_CARD.accent }]}>
-              cart locked
-            </ThemedText>
-
-            <ThemedView style={[styles.lockedDishSurface, { backgroundColor: LOCKED_CARD.surface }]}>
-              {cart.cartLines.map((line, i) => (
-                <ThemedView key={line.recipeId} style={styles.transparent}>
-                  {i > 0 && <ThemedView style={[styles.lockedDivider, { backgroundColor: LOCKED_CARD.divider }]} />}
-                  <ThemedView style={[styles.lockedDishRow, styles.transparent]}>
-                    <ThemedText type="default" style={styles.lockedDishName}>
-                      {line.name}
-                    </ThemedText>
-                    <ThemedText type="small" style={{ color: LOCKED_CARD.textSecondary }}>
-                      {KIND_LABEL[line.kind].replace(/s$/, '').toLowerCase()} · ×{line.quantity}
-                    </ThemedText>
-                  </ThemedView>
-                </ThemedView>
-              ))}
-            </ThemedView>
-
-            <ThemedText type="small" style={[styles.lockedStat, { color: LOCKED_CARD.textSecondary }]}>
-              {cart.cartLines.length} {cart.cartLines.length === 1 ? 'dish' : 'dishes'}, {headcount}{' '}
-              {headcount === 1 ? 'person' : 'people'}.
-            </ThemedText>
-
-            {!!streak && streak > 0 && (
-              <ThemedView style={[styles.streakTag, { backgroundColor: LOCKED_CARD.surface }]}>
-                <ThemedText type="small" style={{ color: LOCKED_CARD.accent }}>
-                  {streak}-day streak{streak > 1 ? ' — unbroken' : ''}
-                </ThemedText>
-              </ThemedView>
-            )}
-
-            <ThemedView style={[styles.lockedActions, styles.transparent]}>
-              <Pressable style={[styles.actionButton, { backgroundColor: theme.accent }]} onPress={() => router.push('/grocery-list')}>
-                <ThemedText type="smallBold" style={[styles.actionButtonText, { color: theme.background }]}>
-                  Grocery list
-                </ThemedText>
-              </Pressable>
-              <Pressable
-                style={[styles.actionButtonOutline, { borderColor: LOCKED_CARD.divider }]}
-                onPress={() => router.push('/cook-message-preview')}>
-                <ThemedText type="smallBold" style={styles.lockedOutlineText}>
-                  Preview cook message
-                </ThemedText>
-              </Pressable>
-            </ThemedView>
-          </ThemedView>
-        )}
-
-        {!cart.isLocked && (
-          <ThemedView style={styles.section}>
-            <ThemedView style={[styles.tabRow, { backgroundColor: theme.backgroundElement }]}>
-              {TABS.map((kind) => {
-                const selected = activeTab === kind;
-                const count = cartLinesByKind[kind].length;
-                return (
-                  <Pressable
-                    key={kind}
-                    onPress={() => setActiveTab(kind)}
-                    style={[styles.tabOption, selected && { backgroundColor: theme.accentSoft }]}>
-                    <ThemedText
-                      type="smallBold"
-                      style={selected ? { color: theme.accentText } : { color: theme.textSecondary }}>
-                      {TAB_LABEL[kind]}
-                      {count > 0 ? ` · ${count}` : ''}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
-            </ThemedView>
-
-            {limitWarning && (
-              <ThemedView style={[styles.warningCard, { backgroundColor: theme.dangerSoft }]}>
-                <ThemedText type="small" style={[styles.warningKicker, { color: theme.danger }]}>
-                  Beyond your limit — not a rule
-                </ThemedText>
-                <ThemedText type="smallBold" style={{ color: theme.danger }}>
-                  That&apos;s {limitWarning.count} {limitWarning.count === 1 ? 'dish' : 'dishes'} for a limit of{' '}
-                  {limitWarning.limit}.
-                </ThemedText>
-                <ThemedText type="small" style={{ color: theme.danger }}>
-                  You set the ceiling at {limitWarning.limit}. The cook can absolutely handle more, this is just a
-                  heads-up.
-                </ThemedText>
-                <ThemedView style={styles.warningActions}>
-                  <Pressable
-                    style={[styles.warningButton, { backgroundColor: theme.background }]}
-                    onPress={undoLimitWarning}>
-                    <ThemedText type="smallBold" style={{ color: theme.danger }}>
-                      Undo
-                    </ThemedText>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.warningButton, { backgroundColor: theme.danger }]}
-                    onPress={() => setLimitWarning(null)}>
-                    <ThemedText type="smallBold" style={{ color: theme.background }}>
-                      Keep it anyway
-                    </ThemedText>
-                  </Pressable>
-                </ThemedView>
-              </ThemedView>
-            )}
-
-            {cartLinesByKind[activeTab].length > 0 && (
-              <ThemedView style={styles.optionsList}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  In the cart
-                </ThemedText>
-                {cartLinesByKind[activeTab].map((line) => (
-                  <CartLineRow
-                    key={line.recipeId}
-                    line={line}
-                    locked={false}
-                    accentColor={theme.accent}
-                    showCappedMessage={cappedRecipeId === line.recipeId}
-                    onIncrement={() => void incrementQuantity(line.recipeId, line.quantity + 1)}
-                    onDecrement={() => void setQuantity(line.recipeId, line.quantity - 1)}
-                    onRemove={() => removeFromCart(line.recipeId)}
-                  />
-                ))}
-              </ThemedView>
-            )}
-
-            {suggestionsByKind[activeTab].length > 0 && (
-              <ThemedView style={styles.optionsList}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Suggestions — what you haven&apos;t eaten lately
-                </ThemedText>
-                {suggestionsByKind[activeTab].map((option) => (
-                  <Pressable
-                    key={option.recipeId}
-                    onPress={() => addToCartWithLimitCheck(option.recipeId, option.name)}
-                    style={({ pressed }) => [styles.optionCard, pressed && styles.optionCardPressed]}>
-                    <ThemedText type="default" style={styles.optionName}>
-                      {option.name}
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {option.cuisine} · {option.dietClass}
-                    </ThemedText>
-                  </Pressable>
-                ))}
-              </ThemedView>
-            )}
-
-            <Pressable
-              onPress={() => setSearchOpen(true)}
-              style={[styles.searchEntry, { borderColor: theme.divider }]}>
-              <ThemedText type="smallBold" style={{ color: theme.accentText }}>
-                Search for a dish
-              </ThemedText>
-            </Pressable>
-          </ThemedView>
-        )}
-
-        {cart.activity.length > 0 && <ActivityFeed entries={cart.activity} accentColor={theme.accent} />}
-      </ScrollView>
-
-      <SearchModal
-        visible={searchOpen}
-        kind={activeTab}
-        onClose={() => setSearchOpen(false)}
-        onAdd={(recipeId, name) => {
-          addToCartWithLimitCheck(recipeId, name);
-          setSearchOpen(false);
-        }}
-        search={searchRecipes}
-        headcount={headcount}
-      />
-    </SafeAreaView>
-  );
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function activityLine(entry: ActivityEntry): string {
-  const actor = entry.actorDisplayName ?? 'Someone';
-  switch (entry.eventType) {
-    case 'cart_add':
-      return `${actor} added ${entry.recipeName}`;
-    case 'cart_remove':
-      return `${actor} removed ${entry.recipeName}`;
-    case 'cart_quantity_change':
-      return `${actor} changed ${entry.recipeName} · ×${entry.fromQty} → ×${entry.toQty}`;
-    case 'attendance_change':
-      return entry.isOut ? `${actor} is out tonight` : `${actor} is back in`;
-  }
-}
-
-function ActivityFeed({ entries, accentColor }: { entries: ActivityEntry[]; accentColor: string }) {
-  const shown = entries.slice(0, 8);
-  return (
-    <CollapsibleSection title="Who did what" summary={`${shown.length} update${shown.length === 1 ? '' : 's'}`}>
-      <ThemedView style={styles.activityList}>
-        {shown.map((entry) => (
-          <ThemedView key={entry.id} style={styles.activityRow}>
-            <ThemedView style={[styles.activityDot, { backgroundColor: accentColor }]} />
-            <ThemedView style={styles.activityTextCol}>
-              <ThemedText type="default">{activityLine(entry)}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                {formatTime(entry.createdAt)}
-                {entry.eventType === 'attendance_change' && entry.reason ? ` · "${entry.reason}"` : ''}
-              </ThemedText>
-            </ThemedView>
-          </ThemedView>
-        ))}
-      </ThemedView>
-    </CollapsibleSection>
-  );
-}
-
-function EmptyCartAtLock({
-  flatId,
-  meals,
-  takeFallback,
-  getFallbackSuggestions,
-}: {
-  flatId: string | null | undefined;
-  meals: MealType[];
-  takeFallback: (recipeId: string) => Promise<{ error: unknown } | undefined>;
-  getFallbackSuggestions: () => Promise<{ main: SuggestionView | null; accompaniment: SuggestionView | null }>;
-}) {
-  const theme = useTheme();
-  const [fallback, setFallback] = useState<{ main: SuggestionView | null; accompaniment: SuggestionView | null } | undefined>(
-    undefined
-  );
-  const [dismissed, setDismissed] = useState(false);
-
+  const [feedback, setFeedback] = useState('');
+  const [fallback, setFallback] = useState<SuggestionView | null>(null);
   useEffect(() => {
-    void getFallbackSuggestions().then(setFallback);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch once on mount; getFallbackSuggestions' identity changes every render (closes over cart), refetching on every render would be wasteful and pointless since the eligible pool doesn't change within a single lock.
-  }, []);
-
-  if (dismissed || !flatId) return null;
-
-  async function confirmFallback() {
-    if (fallback?.main) await takeFallback(fallback.main.recipeId);
-    if (fallback?.accompaniment) await takeFallback(fallback.accompaniment.recipeId);
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(''), 3000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
+  const contextKey = `${activeGroup?.id}:${activeMeal?.id}:${pollDate}`;
+  const editable = cart?.status === 'open';
+  const tomorrow = pollDate !== istDate();
+  const error = context.error || state.error || action.error;
+  async function add(option: SuggestionView) {
+    const succeeded = await action.run(() => state.addToCart(option.recipeId));
+    if (succeeded) {
+      const count =
+        (cart?.cartLines.filter((l) =>
+          option.kind === 'main' ? l.kind === 'main' : l.kind !== 'main',
+        ).length ?? 0) + 1;
+      const limit =
+        option.kind === 'main' ? cart?.maxMains : cart?.maxAccompaniments;
+      setFeedback(
+        limit && count > limit
+          ? `${option.name} added. Your menu now exceeds the household’s preferred dish count.`
+          : `${option.name} added to the menu.`,
+      );
+    }
+    return succeeded;
   }
-
-  const hasFallback = fallback && (fallback.main || fallback.accompaniment);
-
   return (
-    <ThemedView style={[styles.section, { borderColor: theme.danger }, styles.emptyLockCard]}>
-      <ThemedView style={[styles.emptyLockTag, { backgroundColor: theme.dangerSoft }]}>
-        <ThemedText type="small" style={{ color: theme.danger }}>
-          Cart locked · still empty
-        </ThemedText>
-      </ThemedView>
-      <ThemedText type="subtitle">nobody picked anything</ThemedText>
-      <ThemedText type="default" themeColor="textSecondary">
-        The cart locked with nothing in it. Take a safe fallback, or skip {mealNounList(meals)} altogether.
-      </ThemedText>
-
-      {fallback === undefined && (
-        <ThemedText type="small" themeColor="textSecondary">
-          Finding a fallback…
-        </ThemedText>
-      )}
-
-      {hasFallback && (
-        <ThemedView type="backgroundElement" style={styles.optionsList}>
+    <Screen
+      footer={
+        cart && cart.cartLines.length > 0 ? (
+          <>
+            <View style={ui.row}>
+              <ThemedText type="smallBold">
+                {cart.cartLines.length}{' '}
+                {cart.cartLines.length === 1 ? 'dish' : 'dishes'} · {headcount}{' '}
+                eating
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {editable ? 'Shared menu' : 'Menu confirmed'}
+              </ThemedText>
+            </View>
+            <Button onPress={() => router.push('/grocery-list')}>
+              View household groceries
+            </Button>
+          </>
+        ) : undefined
+      }
+    >
+      <View style={ui.row}>
+        <View style={{ flex: 1 }}>
+          <ThemedText type="smallBold" themeColor="accentText">
+            SALTED / YOUR SHARED TABLE
+          </ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            The fallback, if you take it
+            {activeGroup?.name ?? 'Your household'}
           </ThemedText>
-          {fallback.main && (
-            <ThemedText type="default" style={styles.optionName}>
-              {fallback.main.name} · main
-            </ThemedText>
-          )}
-          {fallback.accompaniment && (
-            <ThemedText type="default" style={styles.optionName}>
-              {fallback.accompaniment.name} · accompaniment
-            </ThemedText>
-          )}
-        </ThemedView>
+        </View>
+        <Button
+          secondary
+          onPress={() => {
+            void state.reload();
+            void context.reloadGroups();
+          }}
+          label="Refresh meals"
+        >
+          ↻
+        </Button>
+      </View>
+      {(groups?.length ?? 0) > 1 && (
+        <View style={ui.wrap}>
+          {groups?.map((g) => (
+            <Chip
+              key={g.id}
+              selected={g.id === activeGroup?.id}
+              onPress={() => setActiveGroupId(g.id)}
+            >
+              {g.name}
+            </Chip>
+          ))}
+        </View>
       )}
-
-      <ThemedView style={styles.lockedActions}>
-        <Pressable
-          style={[styles.actionButtonOutline, { borderColor: theme.divider }]}
-          onPress={() => setDismissed(true)}>
-          <ThemedText type="smallBold">
-            No {mealNounList(meals)} {mealMomentList(meals)}
+      <View style={{ gap: 12 }}>
+        <View style={[ui.row, { flexWrap: 'wrap' }]}>
+          <ThemedText type="title" style={{ fontSize: 36, lineHeight: 42 }}>
+            {activeMeal?.name ?? 'Your next meal'}
           </ThemedText>
-        </Pressable>
-        {hasFallback && (
-          <Pressable style={[styles.actionButton, { backgroundColor: theme.accent }]} onPress={confirmFallback}>
-            <ThemedText type="smallBold" style={[styles.actionButtonText, { color: theme.background }]}>
-              Take the fallback
-            </ThemedText>
-          </Pressable>
+        </View>
+        <View style={ui.wrap}>
+          <Chip selected={!tomorrow} onPress={() => setDayOffset(0)}>
+            Today
+          </Chip>
+          <Chip selected={tomorrow} onPress={() => setDayOffset(1)}>
+            Tomorrow
+          </Chip>
+        </View>
+        {activeMeal && (
+          <ThemedText themeColor="textSecondary">
+            At {formatMealTime(activeMeal.serve_time)} · all times IST
+          </ThemedText>
         )}
-      </ThemedView>
-    </ThemedView>
+      </View>
+      {(activeGroup?.meals.length ?? 0) > 1 && (
+        <View style={ui.wrap}>
+          {activeGroup?.meals.map((m) => (
+            <Chip
+              key={m.id}
+              selected={m.id === activeMeal?.id}
+              onPress={() => setActiveMealId(m.id)}
+            >
+              {m.name}
+            </Chip>
+          ))}
+        </View>
+      )}
+      {error && <Notice error>{error}</Notice>}
+      {cart === undefined && !error && (
+        <Loading label="Getting your shared menu…" />
+      )}
+      {!activeMeal && groups && (
+        <Empty
+          title="Let’s set the table"
+          detail="Add a meal schedule to start planning together."
+          action="Set up meals"
+          onAction={() => router.push('/(tabs)/settings')}
+        />
+      )}
+      {activeMeal && cart === null && (
+        <Empty
+          title="A little early"
+          detail={`Suggestions open ${new Date(mealMoment(pollDate, activeMeal.serve_time) - activeMeal.open_offset_min * 60000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} IST. If that time has passed, refresh in a few minutes.`}
+          action="Refresh suggestions"
+          onAction={() => {
+            void state.reload();
+          }}
+        />
+      )}
+      {cart && (
+        <>
+          <Card>
+            <View style={ui.row}>
+              <View style={{ flex: 1 }}>
+                <ThemedText type="smallBold">
+                  {headcount} {headcount === 1 ? 'person' : 'people'} eating
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {editable
+                    ? `Make changes until ${formatMealTime(activeMeal?.close_time ?? '16:00')}`
+                    : 'This menu is no longer editable'}
+                </ThemedText>
+              </View>
+              <Button secondary onPress={() => router.push('/who-is-eating')}>
+                Who’s in?
+              </Button>
+            </View>
+            <View style={ui.row}>
+              <ThemedText>I’m eating this meal</ThemedText>
+              <Toggle
+                accessibilityLabel="I'm eating this meal"
+                value={!cart.isOutToday}
+                disabled={!editable || action.pending}
+                onValueChange={(value) => {
+                  void action.run(() => state.setOutToday(!value));
+                }}
+                trackColor={{ true: theme.accentText }}
+              />
+            </View>
+          </Card>
+          {feedback && <Notice>{feedback}</Notice>}
+          {headcount === 0 && (
+            <Notice>
+              No one is eating yet. Mark someone in before adding dishes.
+            </Notice>
+          )}
+          {cart.status === 'cancelled' && (
+            <Empty
+              title="Meal skipped"
+              detail="There’s no menu for this meal. Your next meal is available from the switcher above."
+            />
+          )}
+          <View style={{ gap: 14 }}>
+            <View style={ui.row}>
+              <ThemedText type="subtitle">
+                {editable ? 'On the menu' : 'Your menu'}
+              </ThemedText>
+              <ThemedText type="small" themeColor="accentText">
+                {editable
+                  ? 'EDITING OPEN'
+                  : cart.status === 'dispatched'
+                    ? 'PREPARED'
+                    : 'CONFIRMED'}
+              </ThemedText>
+            </View>
+            {cart.cartLines.length === 0 ? (
+              <Card>
+                <ThemedText type="subtitle">
+                  Start with something good.
+                </ThemedText>
+                <ThemedText themeColor="textSecondary">
+                  {editable
+                    ? 'Pick a dish below. Everyone in your household sees the same menu.'
+                    : 'No dishes were chosen before the menu closed. No empty instructions will be sent.'}
+                </ThemedText>
+                {cart.status === 'closed' && headcount > 0 && (
+                  <>
+                    <Button
+                      secondary
+                      busy={action.pending}
+                      onPress={() => {
+                        void action.run(async () => {
+                          const found = await state.getFallbackSuggestions();
+                          setFallback(found.main);
+                          if (!found.main)
+                            setFeedback(
+                              'No suitable backup dish is available. Please coordinate this meal with your cook.',
+                            );
+                        });
+                      }}
+                    >
+                      Find a backup dish
+                    </Button>
+                    {fallback && (
+                      <Button
+                        busy={action.pending}
+                        onPress={() => {
+                          void action.run(async () => {
+                            const result = await state.takeFallback(
+                              fallback.recipeId,
+                            );
+                            if (result?.error) throw result.error;
+                            setFallback(null);
+                          });
+                        }}
+                      >
+                        Choose {fallback.name}
+                      </Button>
+                    )}
+                  </>
+                )}
+              </Card>
+            ) : (
+              cart.cartLines.map((line) => (
+                <MenuRow
+                  key={line.recipeId}
+                  line={line}
+                  editable={!!editable}
+                  disabled={action.pending}
+                  headcount={headcount}
+                  onChange={(quantity) => {
+                    void action.run(async () => {
+                      await state.setQuantity(line.recipeId, quantity);
+                    });
+                  }}
+                />
+              ))
+            )}
+          </View>
+          {editable && (
+            <View style={{ gap: 16 }}>
+              <ThemedText type="subtitle">A few ideas</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                Picked around your household’s dietary preferences.
+              </ThemedText>
+              <View style={ui.wrap}>
+                {CATEGORIES.map((c) => (
+                  <Chip
+                    key={c.kind}
+                    selected={category === c.kind}
+                    onPress={() => setCategory(c.kind)}
+                  >
+                    {c.label}
+                  </Chip>
+                ))}
+              </View>
+              {cart.suggestions
+                .filter((s) => s.kind === category && !s.inCart)
+                .map((option) => (
+                  <Card key={option.recipeId}>
+                    <View style={ui.row}>
+                      <View style={{ flex: 1, gap: 4 }}>
+                        <ThemedText
+                          type="default"
+                          style={{ fontWeight: '700' }}
+                        >
+                          {option.name}
+                        </ThemedText>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          {option.cuisine.replaceAll('_', ' ')} ·{' '}
+                          {dietLabel(option.dietClass)}
+                        </ThemedText>
+                      </View>
+                      <Button
+                        disabled={action.pending || headcount === 0}
+                        onPress={() => {
+                          void add(option);
+                        }}
+                        label={`Add ${option.name}`}
+                      >
+                        + Add
+                      </Button>
+                    </View>
+                  </Card>
+                ))}
+              {!cart.suggestions.some(
+                (s) => s.kind === category && !s.inCart,
+              ) && (
+                <ThemedText themeColor="textSecondary">
+                  No more suggestions here. Search for something you like.
+                </ThemedText>
+              )}
+              <Button secondary onPress={() => setSearchOpen(true)}>
+                Search for a dish
+              </Button>
+            </View>
+          )}
+          {cart.cartLines.length > 0 && !editable && (
+            <Card>
+              <ThemedText type="subtitle">Next stop: your cook.</ThemedText>
+              <ThemedText themeColor="textSecondary">
+                Check the message and its delivery status. You can send a
+                prepared message yourself through WhatsApp.
+              </ThemedText>
+              <Button
+                secondary
+                onPress={() => router.push('/cook-message-preview')}
+              >
+                Cook instructions
+              </Button>
+            </Card>
+          )}
+          {!!cart.activity.length && (
+            <CollapsibleSection
+              title="Household activity"
+              summary={`${cart.activity.length} recent updates`}
+            >
+              {cart.activity.slice(0, 6).map((entry) => (
+                <View key={entry.id} style={{ gap: 4 }}>
+                  <ThemedText type="small">
+                    {entry.actorDisplayName ?? 'A housemate'}{' '}
+                    {entry.eventType === 'attendance_change'
+                      ? entry.isOut
+                        ? 'is sitting this meal out'
+                        : 'is eating this meal'
+                      : `${entry.eventType === 'cart_add' ? 'added' : entry.eventType === 'cart_remove' ? 'removed' : 'updated'} ${entry.recipeName}`}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {new Date(entry.createdAt).toLocaleTimeString('en-IN', {
+                      timeZone: 'Asia/Kolkata',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </ThemedText>
+                </View>
+              ))}
+            </CollapsibleSection>
+          )}
+        </>
+      )}
+      <Search
+        key={`${contextKey}:${category}`}
+        visible={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        search={state.searchRecipes}
+        kind={category}
+        onAdd={add}
+        disabled={action.pending || !editable || headcount === 0}
+      />
+    </Screen>
   );
 }
-
-// One chip per group the user belongs to, labeled by the group's own name —
-// switches the whole screen's scope to that group (design doc: "Meal
-// switcher chips"). Hidden entirely for single-group users so their screen
-// looks unchanged. Fully dynamic: whatever groups the user has joined,
-// exactly that many chips render, in whatever order useMyGroups sorts them.
-function MealChips({
-  groups,
-  activeGroupId,
-  onSelect,
-}: {
-  groups: { id: string; name: string }[] | undefined;
-  activeGroupId: string | undefined;
-  onSelect: (id: string) => void;
-}) {
-  const theme = useTheme();
-  if (!groups || groups.length <= 1) return null;
-
-  return (
-    <ThemedView style={[styles.tabRow, { backgroundColor: theme.backgroundElement }]}>
-      {groups.map((group) => {
-        const selected = group.id === activeGroupId;
-        return (
-          <Pressable
-            key={group.id}
-            onPress={() => onSelect(group.id)}
-            style={[styles.tabOption, selected && { backgroundColor: theme.accentSoft }]}>
-            <ThemedText
-              type="smallBold"
-              style={selected ? { color: theme.accentText } : { color: theme.textSecondary }}>
-              {group.name}
-            </ThemedText>
-          </Pressable>
-        );
-      })}
-    </ThemedView>
-  );
-}
-
-function groupByKind<T extends { kind: RecipeKind }>(items: T[]): Record<RecipeKind, T[]> {
-  return {
-    main: items.filter((i) => i.kind === 'main'),
-    accompaniment: items.filter((i) => i.kind === 'accompaniment'),
-    side: items.filter((i) => i.kind === 'side'),
-  };
-}
-
-function SearchModal({
-  visible,
-  kind,
-  onClose,
-  onAdd,
-  search,
+function MenuRow({
+  line,
+  editable,
+  disabled,
   headcount,
+  onChange,
+}: {
+  line: CartLineView;
+  editable: boolean;
+  disabled: boolean;
+  headcount: number;
+  onChange: (q: number) => void;
+}) {
+  return (
+    <Card>
+      <View style={{ gap: 6 }}>
+        <ThemedText style={{ fontWeight: '700', fontSize: 18 }}>
+          {line.name}
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {line.quantity} {line.quantity === 1 ? 'serving' : 'servings'}
+          {line.updatedByDisplayName
+            ? ` · edited by ${line.updatedByDisplayName}`
+            : ''}
+        </ThemedText>
+      </View>
+      {editable && (
+        <View style={ui.row}>
+          <View style={[ui.row, { justifyContent: 'flex-start' }]}>
+            <Button
+              secondary
+              disabled={disabled}
+              label={`Decrease servings of ${line.name}`}
+              onPress={() => onChange(line.quantity - 1)}
+            >
+              −
+            </Button>
+            <ThemedText type="smallBold">{line.quantity}</ThemedText>
+            <Button
+              secondary
+              disabled={disabled || line.quantity >= headcount}
+              label={`Increase servings of ${line.name}`}
+              onPress={() => onChange(line.quantity + 1)}
+            >
+              +
+            </Button>
+          </View>
+          <Button
+            secondary
+            disabled={disabled}
+            label={`Remove ${line.name}`}
+            onPress={() => onChange(0)}
+          >
+            Remove
+          </Button>
+        </View>
+      )}
+    </Card>
+  );
+}
+function Search({
+  visible,
+  onClose,
+  search,
+  kind,
+  onAdd,
+  disabled,
 }: {
   visible: boolean;
-  kind: RecipeKind;
   onClose: () => void;
-  onAdd: (recipeId: string, name: string) => void;
   search: (kind: RecipeKind, query: string) => Promise<SuggestionView[]>;
-  headcount: number;
+  kind: RecipeKind;
+  onAdd: (o: SuggestionView) => Promise<boolean>;
+  disabled: boolean;
 }) {
-  const theme = useTheme();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SuggestionView[]>([]);
   const [searching, setSearching] = useState(false);
-
-  async function runSearch(text: string) {
-    setQuery(text);
-    if (text.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    setSearching(true);
-    const found = await search(kind, text);
-    setSearching(false);
-    setResults(found);
-  }
-
+  const [error, setError] = useState('');
+  const searchRef = useRef(search);
+  useEffect(() => {
+    searchRef.current = search;
+  }, [search]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!visible || query.trim().length < 2) return;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      setError('');
+      try {
+        const found = await searchRef.current(kind, query);
+        if (!cancelled) setResults(found);
+      } catch (cause) {
+        if (!cancelled) setError(friendlyError(cause));
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [visible, query, kind]);
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={[styles.modalSheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
-          <ThemedText type="title" style={styles.modalHeading}>
-            add {SEARCH_LABEL[kind]}
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <Screen>
+        <View style={ui.row}>
+          <ThemedText type="subtitle">Find your next dish</ThemedText>
+          <Button secondary onPress={onClose}>
+            Close
+          </Button>
+        </View>
+        <Field
+          label="Dish name"
+          placeholder="Try dal, rice or paneer"
+          autoFocus
+          value={query}
+          onChangeText={(value) => {
+            setQuery(value);
+            setResults([]);
+            setSearching(value.trim().length >= 2);
+          }}
+        />
+        {error && <Notice error>{error}</Notice>}
+        {searching && <Loading label="Finding dishes…" />}
+        {!searching &&
+          query.trim().length >= 2 &&
+          !results.length &&
+          !error && (
+            <Notice>
+              No matches for your household’s preferences. Try another dish
+              name.
+            </Notice>
+          )}
+        {query.trim().length < 2 && (
+          <ThemedText themeColor="textSecondary">
+            Enter at least two letters to search.
           </ThemedText>
-          <TextInput
-            placeholder="Search dishes…"
-            placeholderTextColor={theme.textSecondary}
-            value={query}
-            onChangeText={runSearch}
-            autoFocus
-            style={[styles.searchInput, { borderColor: theme.divider, color: theme.text, backgroundColor: theme.backgroundElement }]}
-          />
-
-          {searching && (
+        )}
+        {results.map((option) => (
+          <Card key={option.recipeId}>
+            <ThemedText>{option.name}</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
-              Searching…
+              {option.cuisine} · {dietLabel(option.dietClass)}
             </ThemedText>
-          )}
-
-          {!searching && query.trim().length >= 2 && results.length === 0 && (
-            <ThemedText type="small" themeColor="textSecondary">
-              Nothing found — or it&apos;s not something the group can all eat.
-            </ThemedText>
-          )}
-
-          <ScrollView style={styles.modalResults}>
-            {results.map((option) => (
-              <Pressable
-                key={option.recipeId}
-                onPress={() => onAdd(option.recipeId, option.name)}
-                disabled={option.inCart}
-                style={[styles.resultRow, { backgroundColor: theme.backgroundElement }, option.inCart && styles.disabled]}>
-                <ThemedView style={styles.resultInfo}>
-                  <ThemedText type="default" style={styles.optionName}>
-                    {option.name}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {option.cuisine} · {option.dietClass}
-                    {option.inCart ? ' · already in cart' : ''}
-                  </ThemedText>
-                </ThemedView>
-                {!option.inCart && (
-                  <ThemedText type="smallBold" style={{ color: theme.accentText }}>
-                    +
-                  </ThemedText>
-                )}
-              </Pressable>
-            ))}
-          </ScrollView>
-
-          <ThemedView style={[styles.hint, { borderColor: theme.divider }]}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Anything you add starts at <ThemedText type="smallBold">×{headcount}</ThemedText>, the headcount.
-            </ThemedText>
-          </ThemedView>
-        </Pressable>
-      </Pressable>
+            <Button
+              disabled={disabled || option.inCart}
+              onPress={() => {
+                void onAdd(option).then((ok) => {
+                  if (ok) onClose();
+                });
+              }}
+            >
+              {option.inCart ? 'Already on the menu' : 'Add to menu'}
+            </Button>
+          </Card>
+        ))}
+      </Screen>
     </Modal>
   );
 }
-
-function CartLineRow({
-  line,
-  locked,
-  accentColor,
-  showCappedMessage,
-  onIncrement,
-  onDecrement,
-  onRemove,
-}: {
-  line: CartLineView;
-  locked: boolean;
-  accentColor: string;
-  showCappedMessage?: boolean;
-  onIncrement?: () => void;
-  onDecrement?: () => void;
-  onRemove?: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <ThemedView type="backgroundElement" style={styles.cartRowContainer}>
-      <ThemedView style={styles.cartRow}>
-        <ThemedView style={styles.cartRowInfo}>
-          <ThemedText type="default" style={styles.optionName}>
-            {line.name}
-          </ThemedText>
-          {line.updatedByDisplayName && (
-            <ThemedText type="small" themeColor="textSecondary">
-              edited by {line.updatedByDisplayName}
-            </ThemedText>
-          )}
-        </ThemedView>
-
-        {locked ? (
-          <ThemedText type="default">{line.quantity}</ThemedText>
-        ) : (
-          <ThemedView style={styles.stepper}>
-            <Pressable style={[styles.stepperButton, { backgroundColor: accentColor }]} onPress={onDecrement}>
-              <ThemedText type="smallBold" style={styles.stepperButtonText}>
-                −
-              </ThemedText>
-            </Pressable>
-            <ThemedText type="default" style={styles.stepperValue}>
-              {line.quantity}
-            </ThemedText>
-            <Pressable style={[styles.stepperButton, { backgroundColor: accentColor }]} onPress={onIncrement}>
-              <ThemedText type="smallBold" style={styles.stepperButtonText}>
-                +
-              </ThemedText>
-            </Pressable>
-            <Pressable style={styles.removeButton} onPress={onRemove}>
-              <ThemedText type="smallBold" themeColor="textSecondary">
-                Remove
-              </ThemedText>
-            </Pressable>
-          </ThemedView>
-        )}
-      </ThemedView>
-
-      {showCappedMessage && (
-        <ThemedText type="small" style={{ color: theme.danger }}>
-          Already at headcount — nobody else to eat it.
-        </ThemedText>
-      )}
-    </ThemedView>
-  );
-}
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: {
-    padding: Spacing.four,
-    gap: Spacing.four,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  headcountLink: {
-    textDecorationLine: 'underline',
-  },
-  outToggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-  },
-  section: {
-    gap: Spacing.three,
-  },
-  emptyLockCard: {
-    padding: Spacing.four,
-    borderRadius: Radius.lg,
-    borderWidth: 1.5,
-  },
-  emptyLockTag: {
-    alignSelf: 'flex-start',
-    paddingVertical: Spacing.half,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.pill,
-  },
-  warningCard: {
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-    gap: Spacing.two,
-  },
-  warningKicker: {
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 11,
-  },
-  warningActions: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-    marginTop: Spacing.half,
-  },
-  warningButton: {
-    flex: 1,
-    paddingVertical: Spacing.two,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-  },
-  tabRow: {
-    flexDirection: 'row',
-    borderRadius: Radius.pill,
-    padding: Spacing.half,
-    gap: Spacing.half,
-  },
-  tabOption: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.two,
-    borderRadius: Radius.pill,
-  },
-  optionsList: {
-    gap: Spacing.three,
-  },
-  optionCard: {
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    gap: Spacing.half,
-  },
-  optionCardPressed: {
-    opacity: 0.7,
-  },
-  optionName: {
-    fontFamily: Fonts.bodyBold,
-  },
-  searchEntry: {
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-  },
-  cartRowContainer: {
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-    gap: Spacing.one,
-  },
-  cartRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  cartRowInfo: {
-    gap: Spacing.half,
-    flexShrink: 1,
-  },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  stepperButton: {
-    width: 28,
-    height: 28,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepperButtonText: {
-    color: '#ffffff',
-  },
-  stepperValue: {
-    minWidth: 20,
-    textAlign: 'center',
-  },
-  removeButton: {
-    marginLeft: Spacing.two,
-  },
-  lockedCard: {
-    borderRadius: Radius.lg,
-    padding: Spacing.four,
-    gap: Spacing.three,
-  },
-  lockedKicker: {
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  lockedDishSurface: {
-    borderRadius: Radius.md,
-    padding: Spacing.three,
-    gap: Spacing.two,
-  },
-  lockedDivider: {
-    height: 1,
-  },
-  lockedDishRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.two,
-  },
-  lockedDishName: {
-    fontFamily: Fonts.heading,
-    fontSize: 20,
-    color: '#F1F0F6',
-  },
-  lockedStat: {
-    textAlign: 'center',
-  },
-  streakTag: {
-    alignSelf: 'center',
-    paddingVertical: Spacing.half,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.pill,
-  },
-  lockedActions: {
-    gap: Spacing.two,
-  },
-  actionButtonOutline: {
-    paddingVertical: Spacing.three,
-    borderRadius: Radius.pill,
-    borderWidth: 1.5,
-    alignItems: 'center',
-  },
-  lockedOutlineText: {
-    color: '#C5B7AC',
-  },
-  transparent: {
-    backgroundColor: 'transparent',
-  },
-  activityList: {
-    gap: Spacing.three,
-  },
-  activityRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.two,
-  },
-  activityDot: {
-    width: 7,
-    height: 7,
-    borderRadius: Radius.pill,
-    marginTop: 7,
-  },
-  activityTextCol: {
-    flex: 1,
-    gap: Spacing.half,
-  },
-  actionButton: {
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    fontFamily: Fonts.bodyBold,
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(20,18,28,0.35)',
-  },
-  modalSheet: {
-    maxHeight: '80%',
-    borderTopLeftRadius: Radius.lg,
-    borderTopRightRadius: Radius.lg,
-    padding: Spacing.four,
-    gap: Spacing.three,
-  },
-  modalHeading: {
-    fontSize: 30,
-    lineHeight: 34,
-  },
-  searchInput: {
-    borderWidth: 1.5,
-    borderRadius: Radius.pill,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.four,
-    fontSize: 16,
-    fontFamily: Fonts.body,
-  },
-  modalResults: {
-    gap: Spacing.two,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-    marginBottom: Spacing.two,
-  },
-  resultInfo: {
-    gap: Spacing.half,
-    flexShrink: 1,
-  },
-  hint: {
-    padding: Spacing.three,
-    borderRadius: Radius.md,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-  },
-});
