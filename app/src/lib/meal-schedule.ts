@@ -98,3 +98,92 @@ export function formatMealDate(date: string) {
     timeZone: 'Asia/Kolkata',
   });
 }
+
+// Copy for the Today screen's "there is no poll yet" card.
+//
+// The screen shows this whenever the cart query returns nothing, but that one
+// state has three genuinely different causes and they need different words.
+// Deriving them from the clock keeps the heading from contradicting the time
+// printed underneath it: a meal created AFTER its own opening moment (the
+// latch then makes it due on the next 15-minute tick) used to be announced as
+// "A little early" above an opening time already hours in the past.
+export function suggestionsPendingCopy(
+  meal: Pick<Meal, 'serve_time' | 'close_time' | 'open_offset_min'>,
+  pollDate: string,
+  now = Date.now(),
+): { title: string; detail: string; canRefresh: boolean } {
+  const opensAt = mealMoment(pollDate, meal.serve_time) - meal.open_offset_min * 60000;
+  const closesAt = mealMoment(pollDate, meal.close_time);
+
+  if (now < opensAt) {
+    const when = new Date(opensAt).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return {
+      title: 'A little early',
+      detail: `Suggestions open ${when} IST.`,
+      canRefresh: true,
+    };
+  }
+
+  // Past the close time with nothing to show: the menu never opened and no
+  // amount of refreshing will change that, so don't invite it.
+  if (now >= closesAt) {
+    return {
+      title: 'No menu for this meal',
+      detail:
+        'This meal closed without suggestions. Your next meal is available from the switcher above.',
+      canRefresh: false,
+    };
+  }
+
+  return {
+    title: 'Suggestions are on their way',
+    detail:
+      'They are being put together now and usually appear within a few minutes. Pull to refresh if they are still missing.',
+    canRefresh: true,
+  };
+}
+
+// Digits for the "menu locks in" card on today's cart.
+//
+// Always a zero-padded clock and always to the second: the card exists to be
+// watched, so a segment that sat still would read as broken. Fixed-width
+// segments also keep the line from reflowing on every tick.
+//
+// The hours segment is dropped below an hour rather than rendered as "00:" —
+// a menu closing in minutes should not look like it closes in hours.
+export function formatLockCountdown(
+  closesAt: number,
+  now = Date.now(),
+): { clock: string; closesAtLabel: string } {
+  const closesAtLabel = formatMealTime(
+    new Date(closesAt).toLocaleTimeString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  );
+
+  // Clamp rather than count upward: the poll flipping to closed normally
+  // re-renders this away, but a missed realtime event must not leave a
+  // negative timer on screen.
+  const remaining = Math.max(closesAt - now, 0);
+  const totalSeconds = Math.floor(remaining / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  return {
+    clock:
+      hours > 0
+        ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+        : `${pad(minutes)}:${pad(seconds)}`,
+    closesAtLabel,
+  };
+}

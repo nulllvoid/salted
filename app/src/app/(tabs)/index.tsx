@@ -20,7 +20,13 @@ import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
 import { useTodayCart } from '@/hooks/use-today-cart';
 import { useAction } from '@/hooks/use-action';
-import { formatMealTime, istDate, mealMoment } from '@/lib/meal-schedule';
+import {
+  formatMealTime,
+  istDate,
+  mealMoment,
+  suggestionsPendingCopy,
+} from '@/lib/meal-schedule';
+import { LockCountdown } from '@/components/lock-countdown';
 import { friendlyError } from '@/lib/errors';
 import { dietLabel } from '@/lib/diet-copy';
 import type { CartLineView, RecipeKind, SuggestionView } from '@/types/domain';
@@ -183,18 +189,30 @@ function TodayContent() {
           onAction={() => router.push('/(tabs)/settings')}
         />
       )}
-      {activeMeal && cart === null && (
-        <Empty
-          title="A little early"
-          detail={`Suggestions open ${new Date(mealMoment(pollDate, activeMeal.serve_time) - activeMeal.open_offset_min * 60000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} IST. If that time has passed, refresh in a few minutes.`}
-          action="Refresh suggestions"
-          onAction={() => {
-            void state.reload();
-          }}
-        />
-      )}
+      {activeMeal && cart === null && (() => {
+        const pending = suggestionsPendingCopy(activeMeal, pollDate);
+        return (
+          <Empty
+            title={pending.title}
+            detail={pending.detail}
+            action={pending.canRefresh ? 'Refresh suggestions' : undefined}
+            onAction={
+              pending.canRefresh
+                ? () => {
+                    void state.reload();
+                  }
+                : undefined
+            }
+          />
+        );
+      })()}
       {cart && (
         <>
+          {editable && (
+            <LockCountdown
+              closesAt={mealMoment(pollDate, activeMeal?.close_time ?? '16:00')}
+            />
+          )}
           <Card>
             <View style={ui.row}>
               <View style={{ flex: 1 }}>
