@@ -20,9 +20,15 @@ import { ThemedText } from './themed-text';
 export function Screen({
   children,
   footer,
+  scroll = true,
 }: {
   children: ReactNode;
   footer?: ReactNode;
+  // Opt out of the vertical ScrollView for screens that manage their own
+  // scrolling — a horizontal pager needs a bounded-height parent, and pages
+  // inside it carry their own scrollers. Defaults true so every existing
+  // caller is unaffected.
+  scroll?: boolean;
 }) {
   const theme = useTheme();
   return (
@@ -34,12 +40,20 @@ export function Screen({
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={ui.screen}
-        >
-          {children}
-        </ScrollView>
+        {scroll ? (
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={ui.screen}
+          >
+            {children}
+          </ScrollView>
+        ) : (
+          // Deliberately no ui.screen here: its padding and maxWidth/centring
+          // belong to each page inside the pager. Applying them out here would
+          // make the pager narrower than its own snap interval, so paging
+          // would land between pages on wide screens.
+          <View style={{ flex: 1 }}>{children}</View>
+        )}
         {footer && (
           <View
             style={[

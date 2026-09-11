@@ -64,12 +64,14 @@ test.describe('Groups (multi-group switcher + leave)', () => {
     // than asserting immediately — MealChips renders null until `groups`
     // has loaded and length > 1.
     //
-    // `getByText` alone can also pick up detached/zero-size duplicate nodes
-    // Expo Router leaves behind across a screen transition, so scope to
-    // `:visible` — confirmed via manual DOM probing that the extra matches
-    // have a 0x0 bounding rect while the real chips don't.
-    const testFlatChip = rahulPage.getByText(testFlatName, { exact: true }).locator('visible=true');
-    const secondFlatChip = rahulPage.getByText(SECOND_FLAT_NAME, { exact: true }).locator('visible=true');
+    // Match the chips by role, not by text. Since c856ade labelled the chips
+    // with each group's name, the active group's name ALSO renders as the
+    // Today header's subtitle ((tabs)/index.tsx:120) — two genuinely visible
+    // matches, which `visible=true` cannot separate (it only drops the
+    // detached 0x0 nodes Expo Router leaves across a transition). Chip sets
+    // accessibilityRole="button" (ui.tsx:219); the subtitle is plain text.
+    const testFlatChip = rahulPage.getByRole('button', { name: testFlatName, exact: true });
+    const secondFlatChip = rahulPage.getByRole('button', { name: SECOND_FLAT_NAME, exact: true });
     await expect(testFlatChip).toBeVisible({ timeout: 10_000 });
     await expect(secondFlatChip).toBeVisible({ timeout: 10_000 });
 
@@ -90,34 +92,37 @@ test.describe('Groups (multi-group switcher + leave)', () => {
     const flatId = getSecondFlatId();
 
     await rahulPage.getByRole('tab', { name: 'Settings' }).click();
-    // Scoped to the Settings tabpanel — Expo Router keeps the Today tab's
-    // group-switcher chips mounted in the background (getByLabel('Today')),
-    // and since chips are now labeled by group name too (same as this
-    // group's Settings card), an unscoped locator hits both.
-    const settingsPanel = rahulPage.getByLabel('Settings', { exact: true });
-    await expect(settingsPanel.getByText(SECOND_FLAT_NAME, { exact: true })).toBeVisible();
 
-    // Smallest ancestor div that contains both the group's own name and its
-    // own "Leave group" control — RN-web flattens Views into several nested
-    // divs, so a fixed number of `..` hops is fragile; walk up to the first
-    // ancestor that also contains the sibling text instead.
-    const secondGroupCard = settingsPanel
-      .locator('div')
-      .filter({ hasText: SECOND_FLAT_NAME })
-      .filter({ hasText: 'Leave group' })
-      .last();
-    await secondGroupCard.getByText('Leave group', { exact: true }).click();
+    // Settings is now a pager of four sections; households live on their own
+    // page, which shows only the ACTIVE household. Open that section, then
+    // switch to the second group — the card no longer lists every group, so
+    // the old "find the second group's card" div-walk has nothing to find.
+    await rahulPage
+      .getByRole('tablist', { name: 'Settings sections' })
+      .getByRole('tab', { name: 'Household' })
+      .click();
+    const household = rahulPage.getByLabel('Household', { exact: true });
+    await household
+      .getByLabel('Household for Household')
+      .getByText(SECOND_FLAT_NAME, { exact: true })
+      .click();
 
-    // Two-step confirm: clicking "Leave group" swaps in a "Leave <name>?" /
-    // Cancel / Leave row rather than acting immediately.
-    await expect(rahulPage.getByText(`Leave ${SECOND_FLAT_NAME}?`, { exact: true })).toBeVisible();
+    await expect(household.getByText('Leave household', { exact: true })).toBeVisible();
+    await household.getByText('Leave household', { exact: true }).click();
+
+    // Two-step confirm: the first tap swaps in a warning plus "Keep my
+    // membership" / "Leave <name>" (no question mark — settings.tsx renders
+    // `Leave {group.name}`).
+    await expect(household.getByText(`Leave ${SECOND_FLAT_NAME}`, { exact: true })).toBeVisible();
 
     const rows = dbQuery(
       `select 1 from flat_members where flat_id = '${flatId}' and user_id = '${TEST_USERS.rahul.id}';`
     ) as unknown[];
     expect(rows).toHaveLength(1); // not removed yet — confirm step hasn't been clicked
 
-    await secondGroupCard.getByText('Leave', { exact: true }).click();
+    // The confirm button is the same "Leave <name>" element asserted above —
+    // the first tap revealed it, this one commits.
+    await household.getByText(`Leave ${SECOND_FLAT_NAME}`, { exact: true }).click();
     await rahulPage.waitForTimeout(1500);
 
     const rowsAfter = dbQuery(

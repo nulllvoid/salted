@@ -3,10 +3,14 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Thin wrapper around `supabase db query --linked`, the same tool used
-// throughout manual testing this session. Requires the Supabase CLI to be
-// authenticated against the linked project (already the case in this
-// environment — see CLAUDE.md's Supabase section).
+// Thin wrapper around `scripts/db.mjs` — direct Postgres over the linked
+// project's pooler, with CA-verified TLS.
+//
+// This used to shell out to `supabase db query --linked`. That path is dead in
+// this environment: the configured management token returns HTTP 401, so every
+// call failed before reaching a single assertion (see docs/release-readiness.md
+// "Remaining before public distribution" #3, and CLAUDE.md's Supabase section,
+// which already directs database work through these scripts for this reason).
 //
 // Runs synchronously via execFileSync rather than returning a Promise:
 // Playwright test hooks (beforeEach etc.) await fine either way, and
@@ -16,31 +20,38 @@ export function dbQuery(sql: string): unknown {
   const dir = mkdtempSync(join(tmpdir(), 'flatmeal-e2e-'));
   const file = join(dir, 'query.sql');
   writeFileSync(file, sql, 'utf-8');
+  const repoRoot = join(__dirname, '..', '..', '..');
   try {
     let out: string;
     try {
-      // shell: true is required on Windows — npx resolves to a .cmd file,
-      // which execFileSync can't spawn directly without going through a shell.
-      out = execFileSync('npx', ['supabase', 'db', 'query', '--linked', '--file', file], {
-        encoding: 'utf-8',
-        cwd: join(__dirname, '..', '..'),
-        maxBuffer: 10 * 1024 * 1024,
-        shell: true,
-      });
+      // --env-file supplies SUPABASE_DB_PASSWORD, which db.mjs reads from the
+      // environment; the pooler URL and CA come from supabase/.temp (both
+      // gitignored). Paths are repo-root-relative because that is db.mjs's
+      // own assumption about where supabase/.temp lives.
+      out = execFileSync(
+        'node',
+        ['--env-file=app/.env', 'scripts/db.mjs', '--file', file],
+        {
+          encoding: 'utf-8',
+          cwd: repoRoot,
+          maxBuffer: 10 * 1024 * 1024,
+          shell: true,
+        },
+      );
     } catch (err) {
-      // The CLI exits non-zero on a SQL error (rather than exiting 0 with
-      // an error-shaped JSON body), so execFileSync throws before the
-      // _tag === 'Error' branch below ever runs. Surface its stdout/stderr
-      // — usually the actual Postgres error message — instead of letting
-      // Node's bare "Command failed" propagate with no detail.
+      // db.mjs prints the Postgres error to stderr and exits non-zero, so
+      // execFileSync throws. Surface that message rather than letting Node's
+      // bare "Command failed" propagate with no detail.
       const e = err as { stdout?: string; stderr?: string; message?: string };
       throw new Error(`db query failed (sql: ${sql.slice(0, 200)}): ${e.stdout || e.stderr || e.message}`);
     }
-    const parsed = JSON.parse(out);
-    if (parsed._tag === 'Error') {
-      throw new Error(`db query failed: ${JSON.stringify(parsed.error)}`);
-    }
-    return parsed.rows ?? [];
+    // Output shape differs from the old CLI: db.mjs prints one bare JSON array
+    // per result set that returned rows, and prints NOTHING when a statement
+    // affects no rows (an UPDATE, or a SELECT with no matches). Empty stdout is
+    // therefore a valid empty result, not a parse failure.
+    const trimmed = out.trim();
+    if (!trimmed) return [];
+    return JSON.parse(trimmed.split('\n')[0]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
