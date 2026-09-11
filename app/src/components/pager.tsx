@@ -85,58 +85,91 @@ export function Pager({
 
   return (
     <View style={{ flex: 1 }} onLayout={onLayout}>
+      {/* A segmented control, not free-width pills.
+          Measured at a 360px viewport: the four labels need 365px of tab
+          before gaps against 320px of available track, so as pills they
+          always wrapped and stranded the last one on a row of its own.
+          Equal flex shares divide whatever track there is — four segments of
+          ~80px at 360px — which fits by construction at any width rather
+          than by luck with a particular set of labels.
+
+          It is also the third use of this shape in the app, after the
+          household strip and DaySwitch, so it reads as the established "pick
+          one of these" control rather than a new idiom. */}
       <View
-        accessibilityRole="tablist"
-        accessibilityLabel={a11yLabel}
-        // maxWidth/alignSelf mirror ui.screen, which each page applies to its
-        // own content: without them the tabs sit flush left on a wide screen
-        // while the content they switch between is centred.
-        style={[
-          ui.wrap,
-          {
-            paddingHorizontal: 20,
-            paddingTop: 12,
-            width: '100%',
-            maxWidth: 680,
-            alignSelf: 'center',
-          },
-        ]}
+        style={{
+          paddingHorizontal: 20,
+          paddingTop: 12,
+          width: '100%',
+          // Mirrors ui.screen, which each page applies to its own content:
+          // without it the control sits flush left on a wide screen while the
+          // content it switches between is centred.
+          maxWidth: 680,
+          alignSelf: 'center',
+        }}
       >
-        {pages.map((page, index) => {
-          const selected = index === active;
-          return (
-            <Pressable
-              key={page.key}
-              // Not the Chip component: it hardcodes accessibilityRole="button",
-              // which would make these indistinguishable from the household and
-              // diet chips elsewhere on the same screen.
-              accessibilityRole="tab"
-              accessibilityLabel={page.label}
-              accessibilityState={{ selected }}
-              // RN-web does not map accessibilityState.selected to
-              // aria-selected on a Pressable (verified: the attribute comes
-              // back null), so set it directly. Native reads
-              // accessibilityState; the web build needs this for screen
-              // readers and for tests to tell which section is open.
-              aria-selected={selected}
-              onPress={() => goTo(index)}
-              style={[
-                ui.chip,
-                {
-                  backgroundColor: selected ? theme.accentText : theme.backgroundElement,
-                  borderColor: selected ? theme.accentText : theme.divider,
-                },
-              ]}
-            >
-              <ThemedText
-                type="smallBold"
-                style={{ color: selected ? theme.background : theme.text }}
+        <View
+          accessibilityRole="tablist"
+          accessibilityLabel={a11yLabel}
+          style={{
+            flexDirection: 'row',
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: theme.divider,
+            backgroundColor: theme.backgroundElement,
+            // The track owns the rounding, so the selected segment's fill is
+            // clipped to it instead of squaring off the end corners.
+            overflow: 'hidden',
+          }}
+        >
+          {pages.map((page, index) => {
+            const selected = index === active;
+            return (
+              <Pressable
+                key={page.key}
+                // Not the Chip component: it hardcodes accessibilityRole="button",
+                // which would make these indistinguishable from the household and
+                // diet chips elsewhere on the same screen.
+                accessibilityRole="tab"
+                accessibilityLabel={page.label}
+                accessibilityState={{ selected }}
+                // RN-web does not map accessibilityState.selected to
+                // aria-selected on a Pressable (verified: the attribute comes
+                // back null), so set it directly. Native reads
+                // accessibilityState; the web build needs this for screen
+                // readers and for tests to tell which section is open.
+                aria-selected={selected}
+                onPress={() => goTo(index)}
+                style={{
+                  // Equal shares of the track. minWidth: 0 lets a long label
+                  // shrink its own segment rather than force the row wider
+                  // than the screen.
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 44,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  paddingHorizontal: 6,
+                  paddingVertical: 10,
+                  backgroundColor: selected ? theme.accentText : 'transparent',
+                }}
               >
-                {page.label}
-              </ThemedText>
-            </Pressable>
-          );
-        })}
+                <ThemedText
+                  type="smallBold"
+                  // Truncate rather than wrap: a two-line segment would grow
+                  // the whole track's height for one long label.
+                  numberOfLines={1}
+                  style={{
+                    color: selected ? theme.background : theme.text,
+                    textAlign: 'center',
+                  }}
+                >
+                  {page.label}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       {width === 0 ? (
