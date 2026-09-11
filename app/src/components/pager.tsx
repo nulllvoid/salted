@@ -147,13 +147,20 @@ export function Pager({
               // scopes assertions to one page — all four stay mounted, so
               // text from an off-screen page is otherwise matchable.
               accessibilityLabel={page.label}
-              style={{ width }}
+              // height: '100%' is load-bearing, not cosmetic. A ScrollView only
+              // scrolls inside a bounded height, and that bound has to be
+              // transferred down every parent. With width alone this View sized
+              // itself to its content (Profile measured 842px against a 536px
+              // pager), so the inner scroller had nothing to overflow and the
+              // horizontal pager absorbed the overflow instead.
+              style={{ width, height: '100%' }}
             >
               {/* Each page owns its vertical scrolling and carries ui.screen's
                   padding and max-width, which must stay inside the page rather
                   than on the pager. */}
               <ScrollView
                 keyboardShouldPersistTaps="handled"
+                style={{ flex: 1 }}
                 contentContainerStyle={ui.screen}
               >
                 {page.render()}
