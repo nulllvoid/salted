@@ -35,10 +35,10 @@ export function HouseholdTabs() {
       accessibilityLabel="Household"
       style={{
         flexDirection: 'row',
-        flexWrap: 'wrap',
         alignItems: 'flex-end',
-        // The baseline the tabs sit on. The selected tab covers its own slice
-        // of this rule, which is what makes it read as joined to the content.
+        // No wrapping: the tabs divide the row evenly instead (see flex: 1
+        // below), so two take half each and three a third, the way browser
+        // tabs share their strip rather than leaving a ragged tail.
         borderBottomWidth: 1,
         borderBottomColor: theme.divider,
         marginBottom: 4,
@@ -54,9 +54,15 @@ export function HouseholdTabs() {
             aria-selected={selected}
             onPress={() => setActiveGroupId(group.id)}
             style={{
+              // Equal shares of the strip: 2 tabs -> 50% each, 3 -> 33%.
+              // minWidth: 0 lets a long name shrink its tab instead of
+              // forcing the row wider than the screen.
+              flex: 1,
+              minWidth: 0,
               minHeight: 36,
               justifyContent: 'center',
-              paddingHorizontal: 14,
+              alignItems: 'center',
+              paddingHorizontal: 10,
               paddingVertical: 8,
               borderTopLeftRadius: 10,
               borderTopRightRadius: 10,
@@ -74,9 +80,11 @@ export function HouseholdTabs() {
           >
             <ThemedText
               type="small"
+              numberOfLines={1}
               style={{
                 color: selected ? theme.text : theme.textSecondary,
                 fontWeight: selected ? '700' : '400',
+                textAlign: 'center',
               }}
             >
               {group.name}

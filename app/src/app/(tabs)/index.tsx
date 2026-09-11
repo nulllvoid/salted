@@ -15,6 +15,7 @@ import {
   ui,
 } from '@/components/ui';
 import { CollapsibleSection } from '@/components/collapsible-section';
+import { DaySwitch } from '@/components/day-switch';
 import { HouseholdTabs } from '@/components/household-tabs';
 import { useActiveGroup } from '@/contexts/active-group';
 import { useSession } from '@/hooks/use-session';
@@ -139,13 +140,26 @@ function TodayContent() {
             {activeMeal?.name ?? 'Your next meal'}
           </ThemedText>
         </View>
-        <View style={ui.wrap}>
-          <Chip selected={!tomorrow} onPress={() => setDayOffset(0)}>
-            Today
-          </Chip>
-          <Chip selected={tomorrow} onPress={() => setDayOffset(1)}>
-            Tomorrow
-          </Chip>
+        {/* Meal and day on one row: the day is a property OF the selected
+            meal ("Breakfast, tomorrow" is one answer), not a third
+            independent axis. Rendering them as separate peer rows of
+            identical pills hid that. Meals keep their own chips and wrap
+            freely — a household may have any number of them — while the day
+            sits at the row's end as a quiet segmented control. */}
+        <View style={[ui.row, { flexWrap: 'wrap', gap: 8 }]}>
+          <View style={[ui.wrap, { flex: 1 }]}>
+            {(activeGroup?.meals.length ?? 0) > 1 &&
+              activeGroup?.meals.map((m) => (
+                <Chip
+                  key={m.id}
+                  selected={m.id === activeMeal?.id}
+                  onPress={() => setActiveMealId(m.id)}
+                >
+                  {m.name}
+                </Chip>
+              ))}
+          </View>
+          <DaySwitch tomorrow={tomorrow} onChange={setDayOffset} />
         </View>
         {activeMeal && (
           <ThemedText themeColor="textSecondary">
@@ -153,19 +167,6 @@ function TodayContent() {
           </ThemedText>
         )}
       </View>
-      {(activeGroup?.meals.length ?? 0) > 1 && (
-        <View style={ui.wrap}>
-          {activeGroup?.meals.map((m) => (
-            <Chip
-              key={m.id}
-              selected={m.id === activeMeal?.id}
-              onPress={() => setActiveMealId(m.id)}
-            >
-              {m.name}
-            </Chip>
-          ))}
-        </View>
-      )}
       {error && <Notice error>{error}</Notice>}
       {cart === undefined && !error && (
         <Loading label="Getting your shared menu…" />
