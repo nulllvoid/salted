@@ -52,6 +52,23 @@ export function Pager({
     setActive(pageIndexFromOffset(event.nativeEvent.contentOffset.x, width, pages.length));
   }
 
+  // Track the offset DURING the gesture, not only when it ends.
+  //
+  // The end-of-gesture handlers below are not enough on their own: a wheel or
+  // trackpad swipe on RN-web fires neither momentum-end nor drag-end reliably,
+  // so the header indicator stayed on the old page while the content had
+  // clearly moved. scrollEventThrottle was already set for this and did
+  // nothing without an onScroll to throttle. feature-slides.tsx tracks the
+  // same way, which is why its dots follow a swipe and these tabs did not.
+  function onScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const next = pageIndexFromOffset(
+      event.nativeEvent.contentOffset.x,
+      width,
+      pages.length,
+    );
+    setActive((current) => (current === next ? current : next));
+  }
+
   function goTo(index: number) {
     setActive(index);
     scrollRef.current?.scrollTo({ x: offsetForIndex(index, width), animated: true });
@@ -133,6 +150,7 @@ export function Pager({
           keyboardShouldPersistTaps="handled"
           // Both handlers: momentum fires on native flings, end-drag is what
           // fires on a web mouse drag.
+          onScroll={onScroll}
           onMomentumScrollEnd={onSettled}
           onScrollEndDrag={onSettled}
           scrollEventThrottle={16}

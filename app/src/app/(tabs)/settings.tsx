@@ -1,7 +1,6 @@
 import { View } from 'react-native';
 
 import { Pager, type PagerPage } from '@/components/pager';
-import { CookPage } from '@/components/settings/cook-page';
 import { HouseholdPage } from '@/components/settings/household-page';
 import { MealsPage } from '@/components/settings/meals-page';
 import { ProfilePage } from '@/components/settings/profile-page';
@@ -21,10 +20,13 @@ import { Screen } from '@/components/ui';
 // page now surfaces its own failure next to the control that caused it.
 // The group-level error is not re-handled here either — (tabs)/_layout.tsx
 // already gates the whole tab on it, so this screen never mounts in that state.
+// Four tabs, not five: Cook was a whole tab to reach one card about one
+// person, so it moved into Household alongside the members and invite code it
+// belongs with. "Preferences" is the meal schedules — the household's standing
+// choices about when it eats, rather than a one-off setting.
 const PAGES: PagerPage[] = [
   { key: 'profile', label: 'Profile', render: () => <ProfilePage /> },
-  { key: 'meals', label: 'Meals', render: () => <MealsPage /> },
-  { key: 'cook', label: 'Cook', render: () => <CookPage /> },
+  { key: 'preferences', label: 'Preferences', render: () => <MealsPage /> },
   { key: 'household', label: 'Household', render: () => <HouseholdPage /> },
   { key: 'about', label: 'About', render: () => <AboutPage /> },
 ];

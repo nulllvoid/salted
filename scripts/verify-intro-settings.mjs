@@ -95,11 +95,20 @@ try {
       .getByRole('button', { name: house, exact: true })
       .click();
   }
-  const cook = await section('Cook');
-  await select(cook, 'Cook', 'House A');
+  // Cook moved onto Household as a collapsible section, so open it before
+  // the fields exist. Re-opened after each household switch: the section
+  // remounts with the page's activeGroup key.
+  const cook = await section('Household');
+  async function openCook() {
+    if (!(await cook.getByLabel('Cook’s name').count()))
+      await cook.getByText('Your cook', { exact: true }).click();
+    await cook.getByLabel('Cook’s name').waitFor();
+  }
+  await select(cook, 'Household', 'House A');
+  await openCook();
   await cook.getByLabel('Cook’s name').fill('UNSAVED A');
-  await select(cook, 'Cook', 'House B');
-  await cook.getByLabel('Cook’s name').waitFor();
+  await select(cook, 'Household', 'House B');
+  await openCook();
   if ((await cook.getByLabel('Cook’s name').inputValue()) !== 'Cook House B')
     throw new Error('Cook draft crossed households');
   await cook.getByLabel('Cook’s name').fill('Updated B');
@@ -116,10 +125,10 @@ try {
   await page.screenshot({
     path: 'app/e2e/artifacts/settings-household-scope.png',
   });
-  const meals = await section('Meals');
-  await select(meals, 'Meals', 'House A');
+  const meals = await section('Preferences');
+  await select(meals, 'Preferences', 'House A');
   await meals.getByRole('button', { name: 'Add a meal', exact: true }).click();
-  await select(meals, 'Meals', 'House B');
+  await select(meals, 'Preferences', 'House B');
   if (await meals.getByLabel('Meal name').count())
     throw new Error('New meal draft crossed households');
   const household = await section('Household');

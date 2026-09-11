@@ -1,54 +1,92 @@
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
-import { Chip, ui } from '@/components/ui';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 import { useActiveGroup } from '@/contexts/active-group';
 
-// Household picker for the household-scoped Settings pages (Meals, Cook,
-// Household). Profile is user-scoped and does not show it.
+// Household picker for the household-scoped Settings pages.
 //
-// Lifted from (tabs)/index.tsx's switcher so both tabs share one idiom,
-// including the "only when there is a choice to make" threshold.
+// Styled as the same browser-tab strip the Today header uses: the selected
+// household is a sliver of surface joined to the content below by the
+// baseline rule, the rest recede to plain labels. It replaced a green
+// accent2Soft callout with a heavy left border, which shouted louder than
+// anything it contained — on a page whose whole job is the content beneath it.
 //
-// pageLabel is not decoration: all four pager pages stay mounted at once, so
-// three copies of these chips exist in the DOM simultaneously and the group
+// pageLabel is not decoration: all pager pages stay mounted at once, so
+// several copies of this strip exist in the DOM simultaneously and the group
 // names alone cannot tell them apart. Labelling the wrapper lets a test — or a
 // screen reader — say which page's switcher it means.
+//
+// accessibilityRole stays "button", NOT "tab": settings.spec.ts and
+// scripts/verify-intro-settings.mjs locate these with
+// getByRole('button', { name: <household name> }).
 export function HouseholdSwitcher({ pageLabel }: { pageLabel: string }) {
   const { groups, activeGroup, setActiveGroupId } = useActiveGroup();
   const theme = useTheme();
   if (!activeGroup) return null;
 
+  // One household is not a choice. Keep the context line — it still says which
+  // household is being edited — but drop the strip entirely.
+  const showTabs = (groups?.length ?? 0) > 1;
+
   return (
-    <View
-      accessibilityLabel={`Household for ${pageLabel}`}
-      style={{
-        gap: 12,
-        padding: 16,
-        borderRadius: 16,
-        backgroundColor: theme.accent2Soft,
-        borderLeftWidth: 4,
-        borderLeftColor: theme.accent2Text,
-      }}
-    >
-      <ThemedText type="smallBold" themeColor="accent2Text">
-        HOUSEHOLD · {pageLabel.toUpperCase()}
-      </ThemedText>
+    <View accessibilityLabel={`Household for ${pageLabel}`} style={{ gap: 8 }}>
+      {showTabs && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-end',
+            borderBottomWidth: 1,
+            borderBottomColor: theme.divider,
+          }}
+        >
+          {groups?.map((group) => {
+            const selected = group.id === activeGroup.id;
+            return (
+              <Pressable
+                key={group.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                aria-selected={selected}
+                onPress={() => setActiveGroupId(group.id)}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 36,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  borderTopLeftRadius: 10,
+                  borderTopRightRadius: 10,
+                  backgroundColor: selected
+                    ? theme.backgroundElement
+                    : 'transparent',
+                  borderWidth: 1,
+                  borderBottomWidth: 0,
+                  borderColor: selected ? theme.divider : 'transparent',
+                  marginBottom: -1,
+                }}
+              >
+                <ThemedText
+                  type="small"
+                  numberOfLines={1}
+                  style={{
+                    color: selected ? theme.text : theme.textSecondary,
+                    fontWeight: selected ? '700' : '400',
+                    textAlign: 'center',
+                  }}
+                >
+                  {group.name}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
       <ThemedText type="small" themeColor="textSecondary">
         Editing {activeGroup.name}. Changes apply only to this household.
       </ThemedText>
-      <View style={ui.wrap}>
-        {groups?.map((group) => (
-          <Chip
-            key={group.id}
-            selected={group.id === activeGroup?.id}
-            onPress={() => setActiveGroupId(group.id)}
-          >
-            {group.name}
-          </Chip>
-        ))}
-      </View>
     </View>
   );
 }

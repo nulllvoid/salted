@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Share, View } from 'react-native';
 
 import { CollapsibleSection } from '@/components/collapsible-section';
+import { CookForm } from '@/components/cook-form';
 import { HouseholdSwitcher } from '@/components/settings/household-switcher';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Loading, Notice, ui } from '@/components/ui';
@@ -12,8 +13,12 @@ import { useAction } from '@/hooks/use-action';
 import { useFlatSettings } from '@/hooks/use-flat-settings';
 import { useSession } from '@/hooks/use-session';
 
-// Household-scoped settings that are not meals or the cook: who is in it, the
-// invite code, menu-size preferences, and leaving.
+// Everything scoped to the household: who is in it, the invite code,
+// menu-size preferences, the cook, and leaving.
+//
+// The cook used to be its own tab. It is one form about one person attached
+// to this household, so it sat behind a whole tab of its own while sharing
+// this page's useFlatSettings call — a tab to reach a single card.
 export function HouseholdPage() {
   const { activeGroup } = useActiveGroup();
   return <HouseholdPageContent key={activeGroup?.id ?? 'none'} />;
@@ -22,9 +27,8 @@ function HouseholdPageContent() {
   const router = useRouter();
   const session = useSession();
   const { activeGroup, reloadGroups } = useActiveGroup();
-  const { data, error, updateFlat, leaveFlat, reload } = useFlatSettings(
-    activeGroup?.id,
-  );
+  const { data, error, updateFlat, upsertCook, leaveFlat, reload } =
+    useFlatSettings(activeGroup?.id);
   const action = useAction();
   const [copied, setCopied] = useState(false);
   const [leave, setLeave] = useState(false);
@@ -137,6 +141,17 @@ function HouseholdPageContent() {
                 </Button>
               </View>
             ))}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Your cook"
+            summary={data.cook?.name ?? 'Add your cook’s details'}
+          >
+            <CookForm
+              key={activeGroup.id}
+              cook={data.cook}
+              save={upsertCook}
+            />
           </CollapsibleSection>
 
           <Button secondary onPress={() => setLeave(!leave)}>

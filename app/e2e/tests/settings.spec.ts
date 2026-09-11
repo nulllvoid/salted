@@ -9,7 +9,9 @@ import { TEST_FLAT_ID, TEST_USERS } from '../fixtures/test-users';
 // every match on this name must be exact or the two cross-match.
 const TEST_FLAT_NAME = 'c2004';
 
-// Settings is a pager of four sections (Profile / Meals / Cook / Household).
+// Settings is a pager of four sections (Profile / Preferences / Household /
+// About). Cook is no longer its own tab — it is a collapsible section on
+// Household, so reaching it means opening that section first.
 // All four stay mounted at once, so text from an off-screen section is still
 // matchable — every assertion must be scoped to one panel rather than relying
 // on visibility.
@@ -118,13 +120,13 @@ test.describe('Settings', () => {
 
     await ownerPage.getByRole('tab', { name: 'Settings' }).click();
 
-    const cook = await section(ownerPage, 'Cook');
+    const cook = await section(ownerPage, 'Household');
 
     // Only the active household's cook is shown, and the owner belongs to two
     // households — select this suite's flat, or the save lands on the other
     // one and the row lookup below finds nothing.
     await cook
-      .getByLabel('Household for Cook')
+      .getByLabel('Household for Household')
       .getByText(TEST_FLAT_NAME, { exact: true })
       .click();
 
