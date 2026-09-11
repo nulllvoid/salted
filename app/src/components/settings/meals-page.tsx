@@ -26,7 +26,7 @@ function MealsPageContent() {
 
   return (
     <>
-      <HouseholdSwitcher pageLabel="Preferences" />
+      <HouseholdSwitcher pageLabel="Meals" />
 
       {!activeGroup ? (
         <Empty

@@ -35,7 +35,7 @@ function HouseholdPageContent() {
 
   return (
     <>
-      <HouseholdSwitcher pageLabel="Household" />
+      <HouseholdSwitcher pageLabel="Home" />
 
       {activeGroup && !data && (
         <Card>

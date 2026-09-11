@@ -99,11 +99,11 @@ test.describe('Groups (multi-group switcher + leave)', () => {
     // the old "find the second group's card" div-walk has nothing to find.
     await rahulPage
       .getByRole('tablist', { name: 'Settings sections' })
-      .getByRole('tab', { name: 'Household' })
+      .getByRole('tab', { name: 'Home' })
       .click();
-    const household = rahulPage.getByLabel('Household', { exact: true });
+    const household = rahulPage.getByLabel('Home', { exact: true });
     await household
-      .getByLabel('Household for Household')
+      .getByLabel('Household for Home')
       .getByText(SECOND_FLAT_NAME, { exact: true })
       .click();
 

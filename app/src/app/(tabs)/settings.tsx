@@ -22,12 +22,18 @@ import { Screen } from '@/components/ui';
 // already gates the whole tab on it, so this screen never mounts in that state.
 // Four tabs, not five: Cook was a whole tab to reach one card about one
 // person, so it moved into Household alongside the members and invite code it
-// belongs with. "Preferences" is the meal schedules — the household's standing
-// choices about when it eats, rather than a one-off setting.
+// belongs with.
+//
+// Labels are deliberately short. The segmented control gives each tab an
+// equal quarter of the track — 80px at a 360px viewport — and "Preferences"
+// and "Household" both ellipsised at that width. A truncated tab hides where
+// it leads, which is the one thing a tab has to say, so the words give way
+// rather than the layout: "Meals" is also the more literal name for a page of
+// meal schedules, and "Home" for the household itself.
 const PAGES: PagerPage[] = [
   { key: 'profile', label: 'Profile', render: () => <ProfilePage /> },
-  { key: 'preferences', label: 'Preferences', render: () => <MealsPage /> },
-  { key: 'household', label: 'Household', render: () => <HouseholdPage /> },
+  { key: 'preferences', label: 'Meals', render: () => <MealsPage /> },
+  { key: 'household', label: 'Home', render: () => <HouseholdPage /> },
   { key: 'about', label: 'About', render: () => <AboutPage /> },
 ];
 

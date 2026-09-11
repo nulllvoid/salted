@@ -9,9 +9,11 @@ import { TEST_FLAT_ID, TEST_USERS } from '../fixtures/test-users';
 // every match on this name must be exact or the two cross-match.
 const TEST_FLAT_NAME = 'c2004';
 
-// Settings is a pager of four sections (Profile / Preferences / Household /
-// About). Cook is no longer its own tab — it is a collapsible section on
-// Household, so reaching it means opening that section first.
+// Settings is a pager of four sections (Profile / Meals / Home / About).
+// Cook is no longer its own tab — it is a collapsible section on Home, so
+// reaching it means opening that section first. The labels are short because
+// the segmented control gives each an equal quarter of the track, and longer
+// words ellipsised at phone width.
 // All four stay mounted at once, so text from an off-screen section is still
 // matchable — every assertion must be scoped to one panel rather than relying
 // on visibility.
@@ -52,14 +54,14 @@ test.describe('Settings', () => {
 
     // Households moved onto their own section in the pager refactor; the old
     // "Your households" heading no longer exists.
-    const household = await section(ownerPage, 'Household');
+    const household = await section(ownerPage, 'Home');
 
     // Sections show only the ACTIVE household, and the owner belongs to two —
     // so pick this suite's flat first or the assertions below read the other
     // one's invite code. Scoped to the switcher, whose wrapper is labelled per
     // page, because all four pages stay mounted with their own copy.
     await household
-      .getByLabel('Household for Household')
+      .getByLabel('Household for Home')
       .getByText(TEST_FLAT_NAME, { exact: true })
       .click();
 
@@ -120,13 +122,13 @@ test.describe('Settings', () => {
 
     await ownerPage.getByRole('tab', { name: 'Settings' }).click();
 
-    const cook = await section(ownerPage, 'Household');
+    const cook = await section(ownerPage, 'Home');
 
     // Only the active household's cook is shown, and the owner belongs to two
     // households — select this suite's flat, or the save lands on the other
     // one and the row lookup below finds nothing.
     await cook
-      .getByLabel('Household for Household')
+      .getByLabel('Household for Home')
       .getByText(TEST_FLAT_NAME, { exact: true })
       .click();
 
@@ -175,7 +177,7 @@ test.describe('Settings', () => {
 
   test('leave-household control is present and wired (not a dead placeholder)', async ({ rahulPage }) => {
     await rahulPage.getByRole('tab', { name: 'Settings' }).click();
-    const household = await section(rahulPage, 'Household');
+    const household = await section(rahulPage, 'Home');
     await expect(household.getByText('Leave household', { exact: true })).toBeVisible();
     // Not clicked — leaving the flat would remove rahul from every other
     // spec's fixture data. Presence + no console error on render is the
