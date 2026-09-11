@@ -32,6 +32,10 @@ additional_redirect_urls = [
   "exp://192.168.1.19:8081",
   "exp://192.168.1.19:8081/--/*",
   "http://localhost:8081",
+  "http://localhost:8081/reset-password",
+  "salted://reset-password",
+  "exp://127.0.0.1:8081/--/reset-password",
+  "exp://10.0.2.2:8081/--/reset-password",
 ]
 jwt_expiry = 3600
 enable_signup = true
@@ -53,4 +57,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.wa_webhook]
+verify_jwt = false
+
+[functions.password_login]
 verify_jwt = false
