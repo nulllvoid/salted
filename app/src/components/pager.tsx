@@ -48,7 +48,22 @@ export function Pager({
     setWidth((current) => (current === next ? current : next));
   }
 
+  // True while a tap-driven scrollTo animation is travelling. See onScroll.
+  const animatingToTap = useRef(false);
+  const tapSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function endTapAnimation() {
+    animatingToTap.current = false;
+    if (tapSettleTimer.current) {
+      clearTimeout(tapSettleTimer.current);
+      tapSettleTimer.current = null;
+    }
+  }
+
   function onSettled(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    // A drag or fling ending means the user is driving, so hand tracking back
+    // even if a tap animation was still notionally in flight.
+    endTapAnimation();
     setActive(pageIndexFromOffset(event.nativeEvent.contentOffset.x, width, pages.length));
   }
 
@@ -61,6 +76,12 @@ export function Pager({
   // nothing without an onScroll to throttle. feature-slides.tsx tracks the
   // same way, which is why its dots follow a swipe and these tabs did not.
   function onScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    // Ignore the offsets a tap's own animation travels through. goTo sets the
+    // destination immediately, then animates there — and that animation
+    // reports every intermediate offset, starting next to the page being left.
+    // Following those made a tap visibly snap back to the old tab and walk
+    // forward again, once per page crossed.
+    if (animatingToTap.current) return;
     const next = pageIndexFromOffset(
       event.nativeEvent.contentOffset.x,
       width,
@@ -71,8 +92,20 @@ export function Pager({
 
   function goTo(index: number) {
     setActive(index);
+    animatingToTap.current = true;
+    // The timeout is the primary release on web, not a fallback:
+    // onMomentumScrollEnd does not reliably fire for a programmatic scrollTo
+    // there — the same gap that kept the header from following a swipe before
+    // onScroll existed. Comfortably longer than the animation, short enough
+    // that tracking is live again well before a considered second tap.
+    if (tapSettleTimer.current) clearTimeout(tapSettleTimer.current);
+    tapSettleTimer.current = setTimeout(endTapAnimation, 600);
     scrollRef.current?.scrollTo({ x: offsetForIndex(index, width), animated: true });
   }
+
+  // A pending timer must not fire into an unmounted component, and a settings
+  // tab is easy to leave mid-animation.
+  useEffect(() => endTapAnimation, []);
 
   useEffect(() => {
     // A resize or rotation changes the snap interval, which would otherwise
