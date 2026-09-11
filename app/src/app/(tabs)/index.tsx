@@ -24,6 +24,7 @@ import {
   formatMealTime,
   istDate,
   mealMoment,
+  menuStatusLabel,
   suggestionsPendingCopy,
 } from '@/lib/meal-schedule';
 import { LockCountdown } from '@/components/lock-countdown';
@@ -260,11 +261,7 @@ function TodayContent() {
                 {editable ? 'On the menu' : 'Your menu'}
               </ThemedText>
               <ThemedText type="small" themeColor="accentText">
-                {editable
-                  ? 'EDITING OPEN'
-                  : cart.status === 'dispatched'
-                    ? 'PREPARED'
-                    : 'CONFIRMED'}
+                {menuStatusLabel(cart.status, cart.cartLines.length)}
               </ThemedText>
             </View>
             {cart.cartLines.length === 0 ? (

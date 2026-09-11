@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mealDefaults, validateMeal, nextMeal, istDate, mealMoment, suggestionsPendingCopy, formatLockCountdown, type Meal } from '../../src/lib/meal-schedule';
+import { mealDefaults, validateMeal, nextMeal, istDate, mealMoment, suggestionsPendingCopy, formatLockCountdown, menuStatusLabel, type Meal } from '../../src/lib/meal-schedule';
 import { mergeGroceries, type GroceryContribution } from '../../src/lib/groceries';
 
 test('meal schedules validate opening, locking, dispatch and midnight boundaries', () => {
@@ -13,8 +13,48 @@ test('meal schedules validate opening, locking, dispatch and midnight boundaries
 test('date and default meal selection use IST, including the previous UTC day', () => {
   expect(istDate(Date.parse('2026-09-09T20:00:00Z'))).toBe('2026-09-10');
   const meals = Object.entries(mealDefaults).map(([id, defaults]) => ({ ...defaults, id } as Meal));
-  expect(nextMeal(meals, mealMoment('2026-09-10', '09:00'))?.name).toBe('Lunch');
-  expect(nextMeal(meals, mealMoment('2026-09-10', '23:00'))?.name).toBe('Breakfast');
+  expect(nextMeal(meals, mealMoment('2026-09-10', '09:00'))?.meal.name).toBe('Lunch');
+  expect(nextMeal(meals, mealMoment('2026-09-10', '09:00'))?.dayOffset).toBe(0);
+});
+
+test('the next meal rolls to tomorrow once the last one is served', () => {
+  const meals = [mealDefaults.breakfast, mealDefaults.dinner] as Meal[];
+
+  // Mid-evening, dinner is still ahead: today's dinner, no rollover.
+  const evening = nextMeal(meals, mealMoment('2026-09-11', '19:00'));
+  expect(evening?.meal.name).toBe('Dinner');
+  expect(evening?.dayOffset).toBe(0);
+
+  // After the last serve time of the day, the earliest meal comes back round —
+  // but it belongs to TOMORROW. Returning it against today's date is what put
+  // an already-dispatched breakfast on the Today screen at 22:44 IST while
+  // tomorrow's open poll sat unshown.
+  const lateNight = nextMeal(meals, mealMoment('2026-09-11', '23:00'));
+  expect(lateNight?.meal.name).toBe('Breakfast');
+  expect(lateNight?.dayOffset).toBe(1);
+
+  // Exactly at a serve time the meal is being served, not upcoming.
+  const atDinner = nextMeal(meals, mealMoment('2026-09-11', '20:30'));
+  expect(atDinner?.meal.name).toBe('Breakfast');
+  expect(atDinner?.dayOffset).toBe(1);
+
+  // A single-meal household still rolls over rather than pinning to today.
+  const onlyBreakfast = nextMeal([mealDefaults.breakfast] as Meal[], mealMoment('2026-09-11', '10:00'));
+  expect(onlyBreakfast?.meal.name).toBe('Breakfast');
+  expect(onlyBreakfast?.dayOffset).toBe(1);
+
+  expect(nextMeal([], mealMoment('2026-09-11', '10:00'))).toBeNull();
+});
+
+test('a closed menu with nothing in it is not announced as confirmed', () => {
+  // The header label sits directly above "No dishes were chosen before the
+  // menu closed" — calling that state CONFIRMED contradicts the line under it.
+  expect(menuStatusLabel('open', 0)).toBe('EDITING OPEN');
+  expect(menuStatusLabel('open', 2)).toBe('EDITING OPEN');
+  expect(menuStatusLabel('closed', 0)).toBe('NO DISHES');
+  expect(menuStatusLabel('closed', 2)).toBe('CONFIRMED');
+  expect(menuStatusLabel('dispatched', 0)).toBe('NO DISHES');
+  expect(menuStatusLabel('dispatched', 2)).toBe('PREPARED');
 });
 test('shared groceries sum before rounding, retain sources and do not mix units', () => {
   const base: GroceryContribution = { pollId: 'a', ingredientId: '1', nameEn: 'Onion', nameHi: null, nameKn: null, dishName: 'Dal', quantity: 0.3, unit: 'piece', category: 'vegetable', isStaple: false, checked: true };

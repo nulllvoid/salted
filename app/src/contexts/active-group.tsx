@@ -24,9 +24,17 @@ export function ActiveGroupProvider({ children }: { children: ReactNode }) {
   }>({ offset: 0 });
   const activeGroup =
     groups?.find((g) => g.id === selection.group) ?? groups?.[0] ?? null;
-  const activeMeal =
-    activeGroup?.meals.find((m) => m.id === selection.meal) ??
-    nextMeal(activeGroup?.meals ?? []);
+  const explicitMeal = activeGroup?.meals.find((m) => m.id === selection.meal);
+  const upcoming = nextMeal(activeGroup?.meals ?? []);
+  const activeMeal = explicitMeal ?? upcoming?.meal ?? null;
+  // Day follows the meal unless the user has picked one themselves. Defaulting
+  // to today while nextMeal has rolled past the last serve time is what showed
+  // a dispatched meal instead of the open poll for the next one; an explicit
+  // meal or Today/Tomorrow tap still wins, via selection.offset.
+  const dayOffset =
+    selection.meal || selection.offset !== 0
+      ? selection.offset
+      : (upcoming?.dayOffset ?? 0);
   return (
     <ActiveGroupContext.Provider
       value={{
@@ -34,7 +42,7 @@ export function ActiveGroupProvider({ children }: { children: ReactNode }) {
         error,
         activeGroup,
         activeMeal,
-        pollDate: addDays(istDate(), selection.offset),
+        pollDate: addDays(istDate(), dayOffset),
         setActiveGroupId: (group) => setSelection({ group, offset: 0 }),
         setActiveMealId: (meal) => setSelection((s) => ({ ...s, meal })),
         setDayOffset: (offset) => setSelection((s) => ({ ...s, offset })),

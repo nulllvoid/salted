@@ -43,15 +43,45 @@ export function formatMealTime(time: string) {
   const [h, m] = time.split(':').map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
-export function nextMeal(meals: Meal[], now = Date.now()) {
+// The meal to show by default, WITH the day it belongs to.
+//
+// The day is the whole point: once the last meal of the day has been served,
+// the earliest meal comes back round, but it is tomorrow's. Returning it
+// against today's date put an already-dispatched breakfast on the Today screen
+// late at night while tomorrow's open poll — which create_poll had already
+// opened, since a breakfast poll opens 12h before an 08:30 serve — sat unshown.
+//
+// Callers pair `dayOffset` with the date, never assuming today: `pollDate` is
+// derived as addDays(istDate(), offset).
+export function nextMeal(
+  meals: Meal[],
+  now = Date.now(),
+): { meal: Meal; dayOffset: number } | null {
   const sorted = [...meals].sort((a, b) =>
     a.serve_time.localeCompare(b.serve_time),
   );
-  return (
-    sorted.find((m) => mealMoment(istDate(now), m.serve_time) > now) ??
-    sorted[0] ??
-    null
+  // Strictly greater than: at exactly the serve time the meal is being served,
+  // not upcoming, so it rolls to tomorrow with the rest.
+  const upcoming = sorted.find(
+    (m) => mealMoment(istDate(now), m.serve_time) > now,
   );
+  if (upcoming) return { meal: upcoming, dayOffset: 0 };
+  return sorted[0] ? { meal: sorted[0], dayOffset: 1 } : null;
+}
+
+// The status word above the menu list.
+//
+// Takes the cart size, not just the status, because an empty cart makes two of
+// these labels lies: a closed-but-empty menu announced "CONFIRMED" directly
+// above "No dishes were chosen before the menu closed", and a dispatched-but-
+// empty one claimed "PREPARED" when nothing was ever sent.
+export function menuStatusLabel(
+  status: string,
+  cartLineCount: number,
+): string {
+  if (status === 'open') return 'EDITING OPEN';
+  if (cartLineCount === 0) return 'NO DISHES';
+  return status === 'dispatched' ? 'PREPARED' : 'CONFIRMED';
 }
 export function validateMeal(
   meal: Pick<
