@@ -6,8 +6,8 @@ import {
 } from '@expo-google-fonts/figtree';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, View } from 'react-native';
+import { AnimatedLaunch } from '@/components/animated-launch';
 
 import { Colors } from '@/constants/theme';
 import { Screen, Empty } from '@/components/ui';
@@ -23,16 +23,6 @@ export default function RootLayout() {
     Figtree_400Regular,
     Figtree_700Bold,
   });
-
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      void SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
 
   const palette = Colors[colorScheme === 'dark' ? 'dark' : 'light'];
   const base = colorScheme === 'dark' ? DarkTheme : DefaultTheme;
@@ -51,34 +41,37 @@ export default function RootLayout() {
       }}
     >
       <ActiveGroupProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="grocery-list"
-            options={{
-              headerShown: true,
-              title: 'Grocery list',
-              presentation: 'card',
-            }}
-          />
-          <Stack.Screen
-            name="cook-message-preview"
-            options={{
-              headerShown: true,
-              title: 'Cook message',
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen
-            name="who-is-eating"
-            options={{
-              headerShown: true,
-              title: "Who's eating",
-              presentation: 'modal',
-            }}
-          />
-        </Stack>
+        <View style={{ flex: 1 }}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="grocery-list"
+              options={{
+                headerShown: true,
+                title: 'Grocery list',
+                presentation: 'card',
+              }}
+            />
+            <Stack.Screen
+              name="cook-message-preview"
+              options={{
+                headerShown: true,
+                title: 'Cook message',
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen
+              name="who-is-eating"
+              options={{
+                headerShown: true,
+                title: "Who's eating",
+                presentation: 'modal',
+              }}
+            />
+          </Stack>
+          <AnimatedLaunch fontsReady={fontsLoaded || !!fontError} />
+        </View>
       </ActiveGroupProvider>
     </ThemeProvider>
   );
