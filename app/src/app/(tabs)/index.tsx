@@ -15,6 +15,7 @@ import {
   ui,
 } from '@/components/ui';
 import { CollapsibleSection } from '@/components/collapsible-section';
+import { HouseholdTabs } from '@/components/household-tabs';
 import { useActiveGroup } from '@/contexts/active-group';
 import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
@@ -51,7 +52,6 @@ function TodayContent() {
     activeGroup,
     activeMeal,
     pollDate,
-    setActiveGroupId,
     setActiveMealId,
     setDayOffset,
   } = context;
@@ -132,19 +132,7 @@ function TodayContent() {
           ↻
         </Button>
       </View>
-      {(groups?.length ?? 0) > 1 && (
-        <View style={ui.wrap}>
-          {groups?.map((g) => (
-            <Chip
-              key={g.id}
-              selected={g.id === activeGroup?.id}
-              onPress={() => setActiveGroupId(g.id)}
-            >
-              {g.name}
-            </Chip>
-          ))}
-        </View>
-      )}
+      <HouseholdTabs />
       <View style={{ gap: 12 }}>
         <View style={[ui.row, { flexWrap: 'wrap' }]}>
           <ThemedText type="title" style={{ fontSize: 36, lineHeight: 42 }}>
