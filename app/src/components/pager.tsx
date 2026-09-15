@@ -217,6 +217,7 @@ export function Pager({
                   flex: 1,
                   minWidth: 0,
                   minHeight: Layout.touchTarget,
+                  borderRadius: Radius.pill,
                   justifyContent: 'center',
                   alignItems: 'center',
                   paddingHorizontal: Spacing.micro,
