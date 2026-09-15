@@ -13,8 +13,25 @@ app/*.tsbuildinfo
 app/ios/
 app/android/
 app/e2e/artifacts/
-supabase/.temp/root.crt
-supabase/.temp/cli-latest
+supabase/.temp/
+supabase/.branches/
+
+# Local configuration and generated output at any package depth
+.env
+.env.*
+!.env.example
+!.env.*.example
+.expo/
+dist/
+web-build/
+coverage/
+test-results/
+playwright-report/
+e2e-report/
+*.tsbuildinfo
+*.log
+.cache/
+.thumbnail
 
 # OS
 .DS_Store
@@ -25,6 +42,7 @@ __pycache__/
 *.pyc
 
 # Editor
+.idea/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
