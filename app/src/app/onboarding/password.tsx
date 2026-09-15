@@ -1,8 +1,18 @@
+import { TextGroup } from '@/components/text-group';
 import { useRouter } from 'expo-router';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useRef, useState } from 'react';
 import { View } from 'react-native';
-import { Button, Card, Chip, Field, Notice, Screen, ui } from '@/components/ui';
+import {
+  Button,
+  Card,
+  Chip,
+  Field,
+  IconButton,
+  Notice,
+  Screen,
+  ui,
+} from '@/components/ui';
 import { ThemedText } from '@/components/themed-text';
 import { supabase } from '@/lib/supabase';
 import {
@@ -38,6 +48,7 @@ export default function PasswordLogin() {
     setMessage(null);
     setCode('');
     setRecoverySent(false);
+    setVisible(false);
   }
   async function submit() {
     if (lock.current) return;
@@ -190,25 +201,30 @@ export default function PasswordLogin() {
   return (
     <Screen>
       <Button
-        secondary
+        textOnly
+        icon="back"
         disabled={pending}
         onPress={() =>
-          mode === 'login' ? router.replace('/onboarding') : changeMode('login')
+          mode === 'login'
+            ? router.replace('/onboarding/login')
+            : changeMode('login')
         }
       >
         Back
       </Button>
-      <ThemedText type="smallBold" themeColor="accentText">
-        SALTED
-      </ThemedText>
-      <ThemedText type="title">{title}</ThemedText>
-      <ThemedText themeColor="textSecondary">
-        {mode === 'signup'
-          ? 'Create an account to plan meals with your household.'
-          : mode === 'login'
-            ? 'Sign in to your shared table.'
-            : 'We’ll help you get back to your household.'}
-      </ThemedText>
+      <TextGroup>
+        <ThemedText type="eyebrow" themeColor="accentText">
+          SALTED
+        </ThemedText>
+        <ThemedText type="title">{title}</ThemedText>
+        <ThemedText themeColor="textSecondary">
+          {mode === 'signup'
+            ? 'Create an account to plan meals with your household.'
+            : mode === 'login'
+              ? 'Sign in to your shared table.'
+              : 'We’ll help you get back to your household.'}
+        </ThemedText>
+      </TextGroup>
       <Card>
         {mode === 'signup' && (
           <View style={ui.wrap}>
@@ -247,6 +263,11 @@ export default function PasswordLogin() {
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete={mode === 'login' ? 'username' : 'off'}
+            hint={
+              mode === 'login' || mode === 'recover' || method === 'phone'
+                ? 'For a phone number, include the country code (for example +91).'
+                : undefined
+            }
             placeholder={
               mode === 'signup' && method === 'phone'
                 ? '+91 9876543210'
@@ -281,14 +302,24 @@ export default function PasswordLogin() {
               onSubmitEditing={() => {
                 if (mode === 'login') void submit();
               }}
+              accessory={
+                <IconButton
+                  icon={visible ? 'eyeOff' : 'eye'}
+                  label={visible ? 'Hide password' : 'Show password'}
+                  disabled={pending}
+                  onPress={() => setVisible((v) => !v)}
+                />
+              }
             />
-            <Button
-              secondary
-              disabled={pending}
-              onPress={() => setVisible((v) => !v)}
-            >
-              {visible ? 'Hide password' : 'Show password'}
-            </Button>
+            {mode === 'login' && (
+              <Button
+                textOnly
+                disabled={pending}
+                onPress={() => changeMode('recover')}
+              >
+                Forgot password?
+              </Button>
+            )}
             {mode !== 'login' && (
               <>
                 <ThemedText type="small" themeColor="textSecondary">
@@ -341,22 +372,18 @@ export default function PasswordLogin() {
         </Button>
       </Card>
       {mode === 'login' && (
-        <>
+        <View style={{ alignItems: 'center', alignSelf: 'center' }}>
+          <ThemedText type="small" themeColor="textSecondary">
+            New to Salted?
+          </ThemedText>
           <Button
-            secondary
-            disabled={pending}
-            onPress={() => changeMode('recover')}
-          >
-            Forgot password?
-          </Button>
-          <Button
-            secondary
+            textOnly
             disabled={pending}
             onPress={() => changeMode('signup')}
           >
             Create an account
           </Button>
-        </>
+        </View>
       )}
     </Screen>
   );

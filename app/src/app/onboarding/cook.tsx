@@ -1,3 +1,4 @@
+import { TextGroup } from '@/components/text-group';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
@@ -18,14 +19,16 @@ export default function CookScreen() {
   const action = useAction();
   return (
     <Screen>
-      <ThemedText type="smallBold" themeColor="accentText">
-        YOUR HOUSEHOLD · 2 OF 2
-      </ThemedText>
-      <ThemedText type="title">Meet your cook.</ThemedText>
-      <ThemedText themeColor="textSecondary">
-        Save their WhatsApp number and preferred language. They won’t need to
-        install an app.
-      </ThemedText>
+      <TextGroup>
+        <ThemedText type="eyebrow" themeColor="accentText">
+          YOUR HOUSEHOLD · 2 OF 2
+        </ThemedText>
+        <ThemedText type="title">Meet your cook.</ThemedText>
+        <ThemedText themeColor="textSecondary">
+          Save their WhatsApp number and preferred language. They won’t need to
+          install an app.
+        </ThemedText>
+      </TextGroup>
       {error && (
         <>
           <Notice error>{error}</Notice>

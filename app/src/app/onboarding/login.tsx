@@ -1,3 +1,4 @@
+import { TextGroup } from '@/components/text-group';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -114,15 +115,15 @@ export default function OnboardingSignInScreen() {
 
   return (
     <Screen>
-      <ThemedText type="smallBold" themeColor="accentText">
-        WELCOME TO YOUR SHARED TABLE
-      </ThemedText>
-      <ThemedText type="title" style={{ fontSize: 48, lineHeight: 56 }}>
-        Salted
-      </ThemedText>
-      <ThemedText themeColor="textSecondary">
-        Sign in or create an account. Dinner is better together.
-      </ThemedText>
+      <TextGroup>
+        <ThemedText type="eyebrow" themeColor="accentText">
+          WELCOME TO YOUR SHARED TABLE
+        </ThemedText>
+        <ThemedText type="brand">Salted</ThemedText>
+        <ThemedText themeColor="textSecondary">
+          Sign in or create an account. Dinner is better together.
+        </ThemedText>
+      </TextGroup>
       <Button
         disabled={pending !== null}
         onPress={() => router.push('/onboarding/password')}

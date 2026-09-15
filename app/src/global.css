@@ -1,9 +1,31 @@
 :root {
   --font-display:
-    Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,
-    Segoe UI Symbol, Noto Color Emoji;
+    Figtree_400Regular, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji,
+    Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji;
   --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
-  --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono,
+    Courier New, monospace;
+  --font-rounded:
+    'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic',
+    sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
+  --focus-ring: #8c491a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --focus-ring: #ffc6a5;
+  }
+}
+
+/* Also cover router-owned navigation and native web inputs. Keep the ring
+   inside clipped controls and preserve keyboard visibility in forced colors. */
+:is(button, [role='button'], [role='tab'], a, input, textarea):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+@media (forced-colors: active) {
+  :is(button, [role='button'], [role='tab'], a, input, textarea):focus-visible {
+    outline-color: Highlight;
+  }
 }

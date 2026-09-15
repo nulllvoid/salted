@@ -1,3 +1,4 @@
+import { Spacing } from '@/constants/theme';
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 import { formatMealDate } from '@/lib/meal-schedule';
@@ -27,12 +28,12 @@ export default function WhoIsEatingScreen() {
   const action = useAction();
   return (
     <Screen
+      nativeHeader
       footer={<Button onPress={() => router.back()}>Back to the menu</Button>}
     >
-      <ThemedText type="smallBold" themeColor="accentText">
+      <ThemedText type="eyebrow" themeColor="accentText">
         {activeMeal?.name.toUpperCase()} · {formatMealDate(pollDate)}
       </ThemedText>
-      <ThemedText type="title">Who’s eating?</ThemedText>
       <ThemedText themeColor="textSecondary">
         New dishes start with a serving for everyone who’s in. Check existing
         quantities when the headcount changes.
@@ -60,8 +61,8 @@ export default function WhoIsEatingScreen() {
       {members?.map((member) => (
         <Card key={member.userId}>
           <View style={ui.row}>
-            <View style={{ flex: 1, gap: 6 }}>
-              <ThemedText style={{ fontWeight: '700' }}>
+            <View style={{ flex: 1, gap: Spacing.label }}>
+              <ThemedText type="bodyBold">
                 {member.displayName}
                 {member.userId === session?.user.id ? ' (you)' : ''}
               </ThemedText>

@@ -1,5 +1,8 @@
+import { Radius, Spacing } from '@/constants/theme';
+import { InteractivePressable as Pressable } from '@/components/interactive-pressable';
+import { Icon } from '@/components/icon';
 import { useState } from 'react';
-import { Pressable, Share, View } from 'react-native';
+import { Share, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { formatMealDate } from '@/lib/meal-schedule';
@@ -32,6 +35,7 @@ export default function GroceryListScreen() {
   const shareText = `${activeGroup?.name} · groceries for ${formatMealDate(pollDate)}\n${remaining.length ? remaining.map((l) => `• ${l.nameEn} — ${l.quantityLabel}`).join('\n') : 'Everything is covered.'}${staples.length ? `\nCheck at home: ${staples.map((l) => l.nameEn).join(', ')}` : ''}`;
   return (
     <Screen
+      nativeHeader
       footer={
         data ? (
           <>
@@ -63,10 +67,9 @@ export default function GroceryListScreen() {
         ) : undefined
       }
     >
-      <ThemedText type="smallBold" themeColor="accentText">
+      <ThemedText type="eyebrow" themeColor="accentText">
         ONE HOUSEHOLD, ONE SHOPPING LIST
       </ThemedText>
-      <ThemedText type="title">A little prep.</ThemedText>
       <ThemedText themeColor="textSecondary">
         All your meals for {formatMealDate(pollDate)}. Tick what you have; share
         what’s missing.
@@ -106,82 +109,88 @@ export default function GroceryListScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             For {data.dishSummary}
           </ThemedText>
-          {['vegetable', 'dairy', 'protein', 'other'].map((category) => {
-            const lines = groceries
-              .filter((l) => l.category === category)
-              .sort((a, b) => Number(a.checked) - Number(b.checked));
-            return lines.length ? (
-              <Card key={category}>
-                <ThemedText type="smallBold">
-                  {
-                    (
-                      {
-                        vegetable: 'Vegetables',
-                        dairy: 'Dairy',
-                        protein: 'Protein',
-                        other: 'Other essentials',
-                      } as Record<string, string>
-                    )[category]
-                  }
-                </ThemedText>
-                {lines.map((item) => (
-                  <Pressable
-                    key={item.ingredientId}
-                    accessibilityRole="checkbox"
-                    accessibilityLabel={`${item.nameEn}, ${item.quantityLabel}`}
-                    aria-checked={item.checked}
-                    accessibilityState={{
-                      checked: item.checked,
-                      disabled: action.pending,
-                    }}
-                    disabled={action.pending}
-                    onPress={() => {
-                      void action.run(() =>
-                        toggleChecked(item.ingredientId, !item.checked),
-                      );
-                    }}
-                    style={[ui.row, { minHeight: 60, paddingVertical: 8 }]}
-                  >
-                    <View
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 8,
-                        borderWidth: 1.5,
-                        borderColor: theme.accentText,
-                        backgroundColor: item.checked
-                          ? theme.accentText
-                          : 'transparent',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+          {['vegetable', 'dairy', 'protein', 'staple', 'other'].map(
+            (category) => {
+              const lines = groceries
+                .filter((l) => l.category === category)
+                .sort((a, b) => Number(a.checked) - Number(b.checked));
+              return lines.length ? (
+                <Card key={category}>
+                  <ThemedText type="smallBold">
+                    {
+                      (
+                        {
+                          vegetable: 'Vegetables',
+                          dairy: 'Dairy',
+                          protein: 'Protein',
+                          staple: 'Pantry',
+                          other: 'Other essentials',
+                        } as Record<string, string>
+                      )[category]
+                    }
+                  </ThemedText>
+                  {lines.map((item) => (
+                    <Pressable
+                      key={item.ingredientId}
+                      accessibilityRole="checkbox"
+                      accessibilityLabel={`${item.nameEn}, ${item.quantityLabel}`}
+                      aria-checked={item.checked}
+                      accessibilityState={{
+                        checked: item.checked,
+                        disabled: action.pending,
                       }}
+                      disabled={action.pending}
+                      onPress={() => {
+                        void action.run(() =>
+                          toggleChecked(item.ingredientId, !item.checked),
+                        );
+                      }}
+                      style={[
+                        ui.row,
+                        { minHeight: 60, paddingVertical: Spacing.label },
+                      ]}
                     >
-                      <ThemedText style={{ color: theme.background }}>
-                        {item.checked ? '✓' : ''}
-                      </ThemedText>
-                    </View>
-                    <View style={{ flex: 1, gap: 3 }}>
-                      <ThemedText
+                      <View
                         style={{
-                          textDecorationLine: item.checked
-                            ? 'line-through'
-                            : 'none',
-                          color: item.checked
-                            ? theme.textSecondary
-                            : theme.text,
+                          width: 28,
+                          height: 28,
+                          borderRadius: Radius.sm,
+                          borderWidth: 1.5,
+                          borderColor: theme.accentText,
+                          backgroundColor: item.checked
+                            ? theme.accentText
+                            : 'transparent',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                       >
-                        {item.nameEn}
-                      </ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        {item.quantityLabel} · {item.dishName}
-                      </ThemedText>
-                    </View>
-                  </Pressable>
-                ))}
-              </Card>
-            ) : null;
-          })}
+                        {item.checked && (
+                          <Icon name="check" color={theme.background} />
+                        )}
+                      </View>
+                      <View style={{ flex: 1, gap: Spacing.micro }}>
+                        <ThemedText
+                          style={{
+                            textDecorationLine: item.checked
+                              ? 'line-through'
+                              : 'none',
+                            color: item.checked
+                              ? theme.textSecondary
+                              : theme.text,
+                          }}
+                        >
+                          {item.nameEn}
+                        </ThemedText>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          {item.quantityLabel} · {item.dishName}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                  ))}
+                </Card>
+              ) : null;
+            },
+          )}
           {staples.length > 0 && (
             <Card>
               <ThemedText type="smallBold">

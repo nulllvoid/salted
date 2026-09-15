@@ -38,9 +38,7 @@ import { fetchActiveFlatMeals, type FlatMealRow } from '../_shared/flat-meals.ts
 import { logPipelineError, serializeError } from '../_shared/pipeline-errors.ts';
 import {
   composeEnglishPayload,
-  composeIngredientLine,
   composeMealHeading,
-  composeMethodLine,
   type DishLine,
   type RecipeIngredientRow,
 } from './compose-payload.ts';
@@ -214,7 +212,7 @@ async function dispatchForMeal(
     // Step 4: translation — cached recipe_translations first; else live
     // Google Translate (flagged reviewed_at=null) if a key is configured;
     // else fall back to English so dispatch is never blocked on it.
-    const payloadTranslated = await composeTranslatedPayload(admin, {
+    const payloadTranslated = await composeTranslatedPayload({
       dishes,
       headcount,
       language: cook.language as 'hi' | 'kn' | 'en',
@@ -255,45 +253,8 @@ async function dispatchForMeal(
   }
 }
 
-// Step 4: prefer the reviewed cache; otherwise machine-translate and cache
-// it flagged for human review (reviewed_at stays null until someone signs
-// off — docs/06 "Quality gate before pilot"). Called once per dish in the cart.
-async function getOrTranslateInstructions(
-  admin: ReturnType<typeof createAdminClient>,
-  recipeId: string,
-  language: 'hi' | 'kn',
-  englishInstructions: string
-): Promise<string | null> {
-  const { data: cached } = await admin
-    .from('recipe_translations')
-    .select('instructions')
-    .eq('recipe_id', recipeId)
-    .eq('language', language)
-    .maybeSingle();
-
-  if (cached?.instructions) return cached.instructions;
-
-  const translated = await translateText(englishInstructions, language);
-  if (translated) {
-    // Cached with reviewed_at left null — flags it for the pre-pilot
-    // native-speaker review pass, never presented as pre-reviewed.
-    await admin
-      .from('recipe_translations')
-      .insert({ recipe_id: recipeId, language, instructions: translated, reviewed_at: null })
-      .select('recipe_id')
-      .maybeSingle();
-  }
-  return translated;
-}
-
-// Fills the approved 6-slot WhatsApp template (docs/06-whatsapp-integration.md):
-// {{1}} cook name (filled by the caller/BSP layer, not here), {{2}} dish
-// name, {{3}} total headcount, {{4}} per-dish ingredient breakdown, {{5}}
-// per-dish method breakdown, {{6}} flat note. The template's surrounding
-// text is fixed and approved, so per-dish detail is pushed into the two
-// free-text slots ({{4}}/{{5}}) rather than reshaping {{3}}.
+// Concise message with the household note translated when available.
 async function composeTranslatedPayload(
-  admin: ReturnType<typeof createAdminClient>,
   params: {
     dishes: DishLine[];
     headcount: number;
@@ -303,36 +264,12 @@ async function composeTranslatedPayload(
     fallback: string;
   }
 ): Promise<string> {
-  const { dishes, headcount, language, flatNote, heading, fallback } = params;
+  const { dishes, language, flatNote, heading, fallback } = params;
 
   if (language === 'en') return fallback;
 
-  const ingredientLine = composeIngredientLine(dishes, language);
-
-  const translatedInstructions = new Map<string, string>();
-  for (const dish of dishes) {
-    const translated = await getOrTranslateInstructions(admin, dish.recipeId, language, dish.instructions);
-    if (!translated) {
-      // No cache and no translate key configured — dispatch must not block
-      // on this, so the cook gets the English payload instead of nothing.
-      return fallback;
-    }
-    translatedInstructions.set(dish.recipeId, translated);
-  }
-
-  const methodLine = composeMethodLine(dishes, translatedInstructions);
-  const translatedNote = flatNote && flatNote.trim() ? await translateText(flatNote, language) : null;
-
-  const dishSummary = dishes.map((d) => d.name).join(', ');
-
-  return [
-    `${heading}: ${dishSummary}`,
-    `Please cook for ${headcount} people.`,
-    '',
-    `Ingredients: ${ingredientLine}`,
-    '',
-    `Method:\n${methodLine}`,
-    '',
-    `Note: ${translatedNote ?? flatNote ?? '—'}`,
-  ].join('\n');
+  const translatedNote = flatNote?.trim() ? await translateText(flatNote.trim(), language) : null;
+  const dishSummary = dishes.map((d) => `${d.name} (for ${d.quantity})`).join(', ');
+  const note = translatedNote ?? flatNote?.trim();
+  return [`${heading}: ${dishSummary}`, ...(note ? [`Note: ${note}`] : [])].join('\n\n');
 }

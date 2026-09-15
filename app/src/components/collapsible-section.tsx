@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { InteractivePressable as Pressable } from './interactive-pressable';
+import { Icon } from './icon';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Layout, Spacing } from '@/constants/theme';
 
 // A tap-to-expand section used to keep secondary detail (poll times, cook
 // info, activity history) out of view until asked for — defaults closed so
@@ -21,7 +22,6 @@ export function CollapsibleSection({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const theme = useTheme();
 
   return (
     <ThemedView style={styles.container}>
@@ -40,17 +40,7 @@ export function CollapsibleSection({
             </ThemedText>
           ) : null}
         </ThemedView>
-        <ThemedText
-          type="smallBold"
-          themeColor="textSecondary"
-          style={[
-            styles.chevron,
-            open && styles.chevronOpen,
-            { color: theme.accent },
-          ]}
-        >
-          ⌄
-        </ThemedText>
+        <Icon name={open ? 'chevronDown' : 'chevronRight'} />
       </Pressable>
 
       {open && <ThemedView style={styles.body}>{children}</ThemedView>}
@@ -60,28 +50,21 @@ export function CollapsibleSection({
 
 const styles = StyleSheet.create({
   container: {
-    gap: Spacing.two,
+    gap: Spacing.label,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: Spacing.two,
-    paddingVertical: Spacing.one,
+    gap: Spacing.label,
+    minHeight: Layout.touchTarget,
+    paddingVertical: Spacing.label,
   },
   headerText: {
     flex: 1,
-    gap: Spacing.half,
-  },
-  chevron: {
-    fontSize: 20,
-    lineHeight: 20,
-    transform: [{ rotate: '-90deg' }],
-  },
-  chevronOpen: {
-    transform: [{ rotate: '0deg' }],
+    gap: Spacing.micro,
   },
   body: {
-    gap: Spacing.two,
+    gap: Spacing.field,
   },
 });

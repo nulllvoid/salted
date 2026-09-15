@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { useMyGroups, type GroupSummary } from '@/hooks/use-my-groups';
 import { useSession } from '@/hooks/use-session';
-import { addDays, istDate, nextMeal, type Meal } from '@/lib/meal-schedule';
+import { addDays, istDate, type Meal } from '@/lib/meal-schedule';
+import { resolveMealSelection } from '@/lib/meal-selection';
 interface ActiveGroupValue {
   groups: GroupSummary[] | undefined;
   error?: string;
@@ -20,21 +21,14 @@ export function ActiveGroupProvider({ children }: { children: ReactNode }) {
   const [selection, setSelection] = useState<{
     group?: string;
     meal?: string;
-    offset: number;
-  }>({ offset: 0 });
+    offset?: number;
+  }>({});
   const activeGroup =
     groups?.find((g) => g.id === selection.group) ?? groups?.[0] ?? null;
-  const explicitMeal = activeGroup?.meals.find((m) => m.id === selection.meal);
-  const upcoming = nextMeal(activeGroup?.meals ?? []);
-  const activeMeal = explicitMeal ?? upcoming?.meal ?? null;
-  // Day follows the meal unless the user has picked one themselves. Defaulting
-  // to today while nextMeal has rolled past the last serve time is what showed
-  // a dispatched meal instead of the open poll for the next one; an explicit
-  // meal or Today/Tomorrow tap still wins, via selection.offset.
-  const dayOffset =
-    selection.meal || selection.offset !== 0
-      ? selection.offset
-      : (upcoming?.dayOffset ?? 0);
+  const { meal: activeMeal, offset: dayOffset } = resolveMealSelection(
+    activeGroup?.meals ?? [],
+    selection,
+  );
   return (
     <ActiveGroupContext.Provider
       value={{
@@ -43,8 +37,9 @@ export function ActiveGroupProvider({ children }: { children: ReactNode }) {
         activeGroup,
         activeMeal,
         pollDate: addDays(istDate(), dayOffset),
-        setActiveGroupId: (group) => setSelection({ group, offset: 0 }),
-        setActiveMealId: (meal) => setSelection((s) => ({ ...s, meal })),
+        setActiveGroupId: (group) => setSelection({ group }),
+        setActiveMealId: (meal) =>
+          setSelection((s) => ({ ...s, meal, offset: dayOffset })),
         setDayOffset: (offset) => setSelection((s) => ({ ...s, offset })),
         reloadGroups: reload,
       }}

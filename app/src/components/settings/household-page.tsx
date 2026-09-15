@@ -1,3 +1,5 @@
+import { TextGroup } from '@/components/text-group';
+import { Spacing } from '@/constants/theme';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -59,10 +61,12 @@ function HouseholdPageContent() {
 
       {activeGroup && data && (
         <Card>
-          <ThemedText type="subtitle">{activeGroup.name}</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {data.members.map((m) => m.displayName).join(' · ')}
-          </ThemedText>
+          <TextGroup>
+            <ThemedText type="subtitle">{activeGroup.name}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {data.members.map((m) => m.displayName).join(' · ')}
+            </ThemedText>
+          </TextGroup>
           {action.error && <Notice error>{action.error}</Notice>}
 
           <CollapsibleSection
@@ -116,6 +120,8 @@ function HouseholdPageContent() {
                 <ThemedText style={{ flex: 1 }}>{label}</ThemedText>
                 <Button
                   secondary
+                  icon="minus"
+                  label={`Decrease ${label.toLowerCase()}`}
                   disabled={action.pending || (data.flat[key] ?? 2) <= 1}
                   onPress={() => {
                     void action.run(() =>
@@ -125,10 +131,12 @@ function HouseholdPageContent() {
                     );
                   }}
                 >
-                  −
+                  {null}
                 </Button>
                 <ThemedText>{data.flat[key] ?? 2}</ThemedText>
                 <Button
+                  icon="plus"
+                  label={`Increase ${label.toLowerCase()}`}
                   secondary
                   disabled={action.pending}
                   onPress={() => {
@@ -137,7 +145,7 @@ function HouseholdPageContent() {
                     );
                   }}
                 >
-                  +
+                  {null}
                 </Button>
               </View>
             ))}
@@ -147,11 +155,7 @@ function HouseholdPageContent() {
             title="Your cook"
             summary={data.cook?.name ?? 'Add your cook’s details'}
           >
-            <CookForm
-              key={activeGroup.id}
-              cook={data.cook}
-              save={upsertCook}
-            />
+            <CookForm key={activeGroup.id} cook={data.cook} save={upsertCook} />
           </CollapsibleSection>
 
           <Button secondary onPress={() => setLeave(!leave)}>
@@ -182,7 +186,7 @@ function HouseholdPageContent() {
         </Card>
       )}
 
-      <View style={{ gap: 10 }}>
+      <View style={{ gap: Spacing.inline }}>
         <Button
           secondary
           onPress={() => router.push('/onboarding/create-group')}

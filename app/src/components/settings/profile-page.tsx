@@ -1,9 +1,19 @@
+import { TextGroup } from '@/components/text-group';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Button, Card, Chip, Field, Loading, Notice, Toggle, ui } from '@/components/ui';
+import {
+  Button,
+  Card,
+  Chip,
+  Field,
+  Loading,
+  Notice,
+  Toggle,
+  ui,
+} from '@/components/ui';
 import { useActiveGroup } from '@/contexts/active-group';
 import { useAction } from '@/hooks/use-action';
 import { useProfile } from '@/hooks/use-profile';
@@ -19,7 +29,9 @@ export function ProfilePage() {
   const router = useRouter();
   const session = useSession();
   const { activeGroup } = useActiveGroup();
-  const { profile, error, updateProfile, reload } = useProfile(session?.user.id);
+  const { profile, error, updateProfile, reload } = useProfile(
+    session?.user.id,
+  );
 
   // Two action instances on purpose. useAction serialises calls through a
   // `locked` ref, so a single shared instance means a diet chip tap swallows a
@@ -31,6 +43,12 @@ export function ProfilePage() {
   const [feedback, setFeedback] = useState('');
   const [sent, setSent] = useState(false);
   const [signOut, setSignOut] = useState(false);
+  const [prefsSaved, setPrefsSaved] = useState(false);
+
+  async function savePreferences(patch: Parameters<typeof updateProfile>[0]) {
+    setPrefsSaved(false);
+    setPrefsSaved(await prefs.run(() => updateProfile(patch)));
+  }
 
   if (profile === undefined && !error) return <Loading />;
 
@@ -52,18 +70,22 @@ export function ProfilePage() {
 
       {profile && (
         <Card>
-          <ThemedText type="subtitle">Your preferences</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            Your household’s suggestions respect everyone’s dietary preferences.
-          </ThemedText>
+          <TextGroup>
+            <ThemedText type="subtitle">Your preferences</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Your household’s suggestions respect everyone’s dietary
+              preferences.
+            </ThemedText>
+          </TextGroup>
           {prefs.error && <Notice error>{prefs.error}</Notice>}
           <View style={ui.wrap}>
             {DIET_ORDER.map((type) => (
               <Chip
                 key={type}
                 selected={profile.diet_type === type}
+                disabled={prefs.pending}
                 onPress={() => {
-                  void prefs.run(() => updateProfile({ diet_type: type }));
+                  void savePreferences({ diet_type: type });
                 }}
               >
                 {dietLabel(type)}
@@ -77,7 +99,7 @@ export function ProfilePage() {
               disabled={prefs.pending}
               value={profile.is_jain}
               onValueChange={(value) => {
-                void prefs.run(() => updateProfile({ is_jain: value }));
+                void savePreferences({ is_jain: value });
               }}
             />
           </View>
@@ -87,25 +109,30 @@ export function ProfilePage() {
               <Chip
                 key={allergy}
                 selected={profile.allergies.includes(allergy)}
+                disabled={prefs.pending}
                 onPress={() => {
-                  void prefs.run(() =>
-                    updateProfile({
-                      allergies: profile.allergies.includes(allergy)
-                        ? profile.allergies.filter((a) => a !== allergy)
-                        : [...profile.allergies, allergy],
-                    }),
-                  );
+                  void savePreferences({
+                    allergies: profile.allergies.includes(allergy)
+                      ? profile.allergies.filter((a) => a !== allergy)
+                      : [...profile.allergies, allergy],
+                  });
                 }}
               >
                 {allergy}
               </Chip>
             ))}
           </View>
-          {prefs.pending && (
-            <ThemedText type="small" themeColor="textSecondary">
-              Saving your preferences…
-            </ThemedText>
-          )}
+          <ThemedText
+            type="small"
+            themeColor="textSecondary"
+            accessibilityLiveRegion="polite"
+          >
+            {prefs.pending
+              ? 'Saving your preferences…'
+              : prefsSaved
+                ? 'Preferences saved.'
+                : 'Changes save automatically.'}
+          </ThemedText>
         </Card>
       )}
 
@@ -116,6 +143,8 @@ export function ProfilePage() {
           label="Feedback"
           placeholder="Something we could make better?"
           multiline
+          numberOfLines={4}
+          style={{ minHeight: 112 }}
           value={feedback}
           maxLength={2000}
           onChangeText={(v) => {

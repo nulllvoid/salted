@@ -1,3 +1,4 @@
+import { TextGroup } from '@/components/text-group';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
@@ -62,13 +63,15 @@ function ProfileForm({
   const action = useAction();
   return (
     <Screen>
-      <ThemedText type="smallBold" themeColor="accentText">
-        FIRST, A LITTLE ABOUT YOU
-      </ThemedText>
-      <ThemedText type="title">Made for your taste.</ThemedText>
-      <ThemedText themeColor="textSecondary">
-        Help us suggest dishes that work for you and your housemates.
-      </ThemedText>
+      <TextGroup>
+        <ThemedText type="eyebrow" themeColor="accentText">
+          FIRST, A LITTLE ABOUT YOU
+        </ThemedText>
+        <ThemedText type="title">Made for your taste.</ThemedText>
+        <ThemedText themeColor="textSecondary">
+          Help us suggest dishes that work for you and your housemates.
+        </ThemedText>
+      </TextGroup>
       <Card>
         <Field
           label="Your name"

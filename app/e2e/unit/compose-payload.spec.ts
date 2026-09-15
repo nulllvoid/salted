@@ -61,6 +61,6 @@ test('composeEnglishPayload leads with the meal heading', () => {
   });
 
   expect(payload.startsWith('Breakfast tomorrow (8:00am): Poha (for 3)')).toBe(true);
-  expect(payload).toContain('Poha (3 people):');
+  expect(payload).toBe('Breakfast tomorrow (8:00am): Poha (for 3)');
   expect(payload).not.toContain("Today's meal:");
 });

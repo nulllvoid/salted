@@ -47,7 +47,7 @@ export function composeMealHeading(
 
 // In-app preview payload (cook-message-preview screen) — NOT constrained by
 // the WhatsApp template's fixed slots, since it's just displayed text. Full
-// multi-dish block, one section per dish.
+// meal summary with per-dish servings and an optional household note.
 export function composeEnglishPayload(params: {
   dishes: DishLine[];
   flatNote: string | null;
@@ -60,30 +60,8 @@ export function composeEnglishPayload(params: {
   const dishSummary = dishes.map((d) => `${d.name} (for ${d.quantity})`).join(', ');
   const heading = composeMealHeading(meal.name, meal.serveTime, pollDate, todayIst);
 
-  const dishSections = dishes.map((dish) => {
-    const sorted = [...dish.ingredients].sort((a, b) => a.sort_order - b.sort_order);
-    const buyList = sorted.filter((i) => !i.is_staple);
-    const staples = sorted.filter((i) => i.is_staple);
-
-    const ingredientLines = buyList
-      .map((i) => `${i.name_en} — ${scaleIngredientLabel(i.qty_per_person, i.unit, dish.quantity)}`)
-      .join(', ');
-    const stapleLine = staples.length > 0 ? ` Check you have: ${staples.map((i) => i.name_en).join(', ')}.` : '';
-
-    return [
-      `${dish.name} (${dish.quantity} ${dish.quantity === 1 ? 'person' : 'people'}):`,
-      `Ingredients: ${ingredientLines}.${stapleLine}`,
-      `Method:\n${dish.instructions}`,
-    ].join('\n');
-  });
-
-  return [
-    `${heading}: ${dishSummary}`,
-    '',
-    dishSections.join('\n\n'),
-    '',
-    `Note: ${flatNote && flatNote.trim() ? flatNote.trim() : '—'}`,
-  ].join('\n');
+  const note = flatNote?.trim();
+  return [`${heading}: ${dishSummary}`, ...(note ? [`Note: ${note}`] : [])].join('\n\n');
 }
 
 // {{4}}/{{5}}-bound compositions for the approved 6-slot WhatsApp template

@@ -174,7 +174,7 @@ export function suggestionsPendingCopy(
   return {
     title: 'Suggestions are on their way',
     detail:
-      'They are being put together now and usually appear within a few minutes. Pull to refresh if they are still missing.',
+      'They are being put together now and usually appear within a few minutes. Tap Refresh suggestions if they are still missing.',
     canRefresh: true,
   };
 }

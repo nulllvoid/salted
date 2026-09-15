@@ -1,5 +1,7 @@
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 
+import { InteractivePressable as Pressable } from './interactive-pressable';
+import { Layout, Radius, Spacing } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -33,7 +35,7 @@ export function DaySwitch({
         alignSelf: 'flex-start',
         borderWidth: 1,
         borderColor: theme.divider,
-        borderRadius: 999,
+        borderRadius: Radius.pill,
         // Clip the segment fills to the track's pill shape so the selected
         // half's corners follow the outer radius instead of squaring off.
         overflow: 'hidden',
@@ -50,18 +52,17 @@ export function DaySwitch({
           aria-selected={selected}
           onPress={() => onChange(offset)}
           style={{
-            minHeight: 36,
+            minHeight: Layout.touchTarget,
             justifyContent: 'center',
-            paddingHorizontal: 14,
-            paddingVertical: 7,
+            paddingHorizontal: Spacing.inline,
+            paddingVertical: Spacing.label,
             backgroundColor: selected ? theme.accentSoft : 'transparent',
           }}
         >
           <ThemedText
-            type="small"
+            type={selected ? 'smallBold' : 'small'}
             style={{
               color: selected ? theme.accentText : theme.textSecondary,
-              fontWeight: selected ? '700' : '400',
             }}
           >
             {label}

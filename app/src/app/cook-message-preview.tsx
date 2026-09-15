@@ -7,6 +7,7 @@ import { useActiveGroup } from '@/contexts/active-group';
 import { useCookDispatch } from '@/hooks/use-cook-dispatch';
 import { useAction } from '@/hooks/use-action';
 import { useRouter } from 'expo-router';
+import { conciseCookMessage } from '@/lib/concise-cook-message';
 const LABELS = {
   queued: 'Waiting for the message to be prepared',
   mocked: 'Ready to send yourself',
@@ -21,17 +22,20 @@ export default function CookMessageScreen() {
   const [copied, setCopied] = useState(false);
   const action = useAction();
   const router = useRouter();
-  const body = dispatch
+  const hasTranslation = Boolean(
+    dispatch?.payloadTranslated?.trim() &&
+      dispatch.payloadTranslated.trim() !== dispatch.payloadEn.trim(),
+  );
+  const body = conciseCookMessage(dispatch
     ? english
       ? dispatch.payloadEn
       : dispatch.payloadTranslated || dispatch.payloadEn
-    : '';
+    : '');
   return (
-    <Screen>
-      <ThemedText type="smallBold" themeColor="accentText">
+    <Screen nativeHeader>
+      <ThemedText type="eyebrow" themeColor="accentText">
         FROM YOUR TABLE TO THE KITCHEN
       </ThemedText>
-      <ThemedText type="title">A clear plan.</ThemedText>
       <ThemedText themeColor="textSecondary">
         {activeMeal?.name} instructions for {dispatch?.cookName ?? 'your cook'}.
       </ThemedText>
@@ -45,8 +49,13 @@ export default function CookMessageScreen() {
         <Empty
           title="Let’s get your cook ready"
           detail="A message needs a scheduled meal and a cook’s contact details. Check that both are set up."
-          action="Open settings"
-          onAction={() => router.push('/(tabs)/settings')}
+          action="Set up your cook"
+          onAction={() =>
+            router.push({
+              pathname: '/(tabs)/settings',
+              params: { section: 'household' },
+            })
+          }
         />
       )}
       {dispatch && (
@@ -64,9 +73,14 @@ export default function CookMessageScreen() {
               <Card>
                 <ThemedText selectable>{body}</ThemedText>
               </Card>
-              <Button secondary onPress={() => setEnglish((v) => !v)}>
-                {english ? 'Show cook’s language' : 'Show English'}
-              </Button>
+              {hasTranslation && (
+                <Button secondary onPress={() => {
+                  setEnglish((v) => !v);
+                  setCopied(false);
+                }}>
+                  {english ? 'Show cook’s language' : 'Show English'}
+                </Button>
+              )}
               {(dispatch.status === 'mocked' ||
                 dispatch.status === 'failed') && (
                 <Notice>

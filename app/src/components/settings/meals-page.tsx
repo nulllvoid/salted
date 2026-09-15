@@ -1,3 +1,4 @@
+import { TextGroup } from '@/components/text-group';
 import { useState } from 'react';
 
 import { CollapsibleSection } from '@/components/collapsible-section';
@@ -35,10 +36,12 @@ function MealsPageContent() {
         />
       ) : (
         <Card>
-          <ThemedText type="subtitle">{activeGroup.name}</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            Each meal runs on its own schedule. All times are IST.
-          </ThemedText>
+          <TextGroup>
+            <ThemedText type="subtitle">{activeGroup.name}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Each meal runs on its own schedule. All times are IST.
+            </ThemedText>
+          </TextGroup>
 
           {meals.map((meal) => (
             <CollapsibleSection

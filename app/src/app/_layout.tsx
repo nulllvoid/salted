@@ -10,6 +10,7 @@ import { useColorScheme, View } from 'react-native';
 import { AnimatedLaunch } from '@/components/animated-launch';
 
 import { Colors } from '@/constants/theme';
+import { typography } from '@/components/themed-text';
 import { Screen, Empty } from '@/components/ui';
 import type { ErrorBoundaryProps } from 'expo-router';
 import { ActiveGroupProvider } from '@/contexts/active-group';
@@ -42,7 +43,12 @@ export default function RootLayout() {
     >
       <ActiveGroupProvider>
         <View style={{ flex: 1 }}>
-          <Stack screenOptions={{ headerShown: false }}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              headerTitleStyle: typography.bodyBold,
+            }}
+          >
             <Stack.Screen name="onboarding" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen

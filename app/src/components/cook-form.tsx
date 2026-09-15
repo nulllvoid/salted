@@ -1,3 +1,4 @@
+import { Spacing } from '@/constants/theme';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { Button, Chip, Field, Notice, ui } from './ui';
@@ -25,7 +26,7 @@ export function CookForm({
   const normalPhone = phone.replace(/[\s()-]/g, '');
   const valid = name.trim().length > 0 && /^\+[1-9]\d{7,14}$/.test(normalPhone);
   return (
-    <View style={{ gap: 16 }}>
+    <View style={{ gap: Spacing.field }}>
       <Field
         label="Cook’s name"
         value={name}

@@ -1,3 +1,4 @@
+import { TextGroup } from '@/components/text-group';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -15,25 +16,50 @@ export default function CreateGroupScreen() {
   const [meals, setMeals] = useState<MealType[]>(['dinner']);
   const action = useAction();
   return (
-    <Screen>
-      <Button secondary onPress={() => router.back()}>
+    <Screen
+      footer={
+        <Button
+          busy={action.pending}
+          disabled={!name.trim() || !meals.length}
+          onPress={() => {
+            void action.run(async () => {
+              const { data, error } = await supabase.rpc('create_household', {
+                p_name: name.trim(),
+                p_meals: meals,
+              });
+              if (error) throw error;
+              await reloadGroups();
+              setActiveGroupId(data!);
+              router.replace({
+                pathname: '/onboarding/cook',
+                params: { groupId: data! },
+              });
+            });
+          }}
+        >
+          Create household
+        </Button>
+      }
+    >
+      <Button textOnly icon="back" onPress={() => router.back()}>
         Back
       </Button>
-      <View style={{ gap: 10 }}>
-        <ThemedText type="smallBold" themeColor="accentText">
+      <TextGroup>
+        <ThemedText type="eyebrow" themeColor="accentText">
           YOUR HOUSEHOLD · 1 OF 2
         </ThemedText>
         <ThemedText type="title">A table of your own.</ThemedText>
         <ThemedText themeColor="textSecondary">
           One shared space for your housemates, your meals, and your cook.
         </ThemedText>
-      </View>
+      </TextGroup>
       <Card>
         <Field
           label="Household name"
           placeholder="e.g. The Indiranagar flat"
           value={name}
           onChangeText={setName}
+          editable={!action.pending}
           maxLength={80}
         />
         <ThemedText type="smallBold">Which meals do you share?</ThemedText>
@@ -42,6 +68,7 @@ export default function CreateGroupScreen() {
             <Chip
               key={key}
               selected={meals.includes(key as MealType)}
+              disabled={action.pending}
               onPress={() =>
                 setMeals((current) =>
                   current.includes(key as MealType)
@@ -54,33 +81,16 @@ export default function CreateGroupScreen() {
             </Chip>
           ))}
         </View>
-        <ThemedText type="small" themeColor="textSecondary">
-          Each meal has its own menu and schedule. You can adjust the times in
-          Settings.
+        <ThemedText
+          type="small"
+          themeColor={meals.length ? 'textSecondary' : 'danger'}
+        >
+          {meals.length
+            ? 'Each meal has its own menu and schedule. You can adjust the times in Settings.'
+            : 'Choose at least one shared meal to continue.'}
         </ThemedText>
       </Card>
       {action.error && <Notice error>{action.error}</Notice>}
-      <Button
-        busy={action.pending}
-        disabled={!name.trim() || !meals.length}
-        onPress={() => {
-          void action.run(async () => {
-            const { data, error } = await supabase.rpc('create_household', {
-              p_name: name.trim(),
-              p_meals: meals,
-            });
-            if (error) throw error;
-            await reloadGroups();
-            setActiveGroupId(data!);
-            router.replace({
-              pathname: '/onboarding/cook',
-              params: { groupId: data! },
-            });
-          });
-        }}
-      >
-        Create household
-      </Button>
     </Screen>
   );
 }

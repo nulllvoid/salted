@@ -1,3 +1,4 @@
+import { Spacing } from '@/constants/theme';
 import { useState } from 'react';
 import { Button, Card, Chip, Field, Notice, ui } from './ui';
 import { ThemedText } from './themed-text';
@@ -69,7 +70,7 @@ export function MealEditor({
     }
   }
   return (
-    <View style={{ gap: 16 }}>
+    <View style={{ gap: Spacing.field }}>
       {!meal && (
         <View style={ui.wrap}>
           {Object.entries(mealDefaults).map(([key, value]) => (

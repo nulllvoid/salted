@@ -1,3 +1,5 @@
+import { TextGroup } from '@/components/text-group';
+import { Spacing } from '@/constants/theme';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, View } from 'react-native';
@@ -115,7 +117,7 @@ function TodayContent() {
     >
       <View style={ui.row}>
         <View style={{ flex: 1 }}>
-          <ThemedText type="smallBold" themeColor="accentText">
+          <ThemedText type="eyebrow" themeColor="accentText">
             SALTED / YOUR SHARED TABLE
           </ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
@@ -129,14 +131,15 @@ function TodayContent() {
             void context.reloadGroups();
           }}
           label="Refresh meals"
+          icon="refresh"
         >
-          ↻
+          {null}
         </Button>
       </View>
       <HouseholdTabs />
-      <View style={{ gap: 12 }}>
+      <View style={{ gap: Spacing.inline }}>
         <View style={[ui.row, { flexWrap: 'wrap' }]}>
-          <ThemedText type="title" style={{ fontSize: 36, lineHeight: 42 }}>
+          <ThemedText type="title">
             {activeMeal?.name ?? 'Your next meal'}
           </ThemedText>
         </View>
@@ -146,8 +149,8 @@ function TodayContent() {
             identical pills hid that. Meals keep their own chips and wrap
             freely — a household may have any number of them — while the day
             sits at the row's end as a quiet segmented control. */}
-        <View style={[ui.row, { flexWrap: 'wrap', gap: 8 }]}>
-          <View style={[ui.wrap, { flex: 1 }]}>
+        <View style={[ui.row, { flexWrap: 'wrap', gap: Spacing.label }]}>
+            <View style={[ui.wrap, { flexGrow: 1, flexBasis: 280 }]}>
             {(activeGroup?.meals.length ?? 0) > 1 &&
               activeGroup?.meals.map((m) => (
                 <Chip
@@ -176,26 +179,33 @@ function TodayContent() {
           title="Let’s set the table"
           detail="Add a meal schedule to start planning together."
           action="Set up meals"
-          onAction={() => router.push('/(tabs)/settings')}
+          onAction={() =>
+            router.push({
+              pathname: '/(tabs)/settings',
+              params: { section: 'meals' },
+            })
+          }
         />
       )}
-      {activeMeal && cart === null && (() => {
-        const pending = suggestionsPendingCopy(activeMeal, pollDate);
-        return (
-          <Empty
-            title={pending.title}
-            detail={pending.detail}
-            action={pending.canRefresh ? 'Refresh suggestions' : undefined}
-            onAction={
-              pending.canRefresh
-                ? () => {
-                    void state.reload();
-                  }
-                : undefined
-            }
-          />
-        );
-      })()}
+      {activeMeal &&
+        cart === null &&
+        (() => {
+          const pending = suggestionsPendingCopy(activeMeal, pollDate);
+          return (
+            <Empty
+              title={pending.title}
+              detail={pending.detail}
+              action={pending.canRefresh ? 'Refresh suggestions' : undefined}
+              onAction={
+                pending.canRefresh
+                  ? () => {
+                      void state.reload();
+                    }
+                  : undefined
+              }
+            />
+          );
+        })()}
       {cart && (
         <>
           {editable && (
@@ -244,7 +254,7 @@ function TodayContent() {
               detail="There’s no menu for this meal. Your next meal is available from the switcher above."
             />
           )}
-          <View style={{ gap: 14 }}>
+          <View style={{ gap: Spacing.field }}>
             <View style={ui.row}>
               <ThemedText type="subtitle">
                 {editable ? 'On the menu' : 'Your menu'}
@@ -255,14 +265,16 @@ function TodayContent() {
             </View>
             {cart.cartLines.length === 0 ? (
               <Card>
-                <ThemedText type="subtitle">
-                  Start with something good.
-                </ThemedText>
-                <ThemedText themeColor="textSecondary">
-                  {editable
-                    ? 'Pick a dish below. Everyone in your household sees the same menu.'
-                    : 'No dishes were chosen before the menu closed. No empty instructions will be sent.'}
-                </ThemedText>
+                <TextGroup>
+                  <ThemedText type="subtitle">
+                    Start with something good.
+                  </ThemedText>
+                  <ThemedText themeColor="textSecondary">
+                    {editable
+                      ? 'Pick a dish below. Everyone in your household sees the same menu.'
+                      : 'No dishes were chosen before the menu closed. No empty instructions will be sent.'}
+                  </ThemedText>
+                </TextGroup>
                 {cart.status === 'closed' && headcount > 0 && (
                   <>
                     <Button
@@ -318,11 +330,13 @@ function TodayContent() {
             )}
           </View>
           {editable && (
-            <View style={{ gap: 16 }}>
-              <ThemedText type="subtitle">A few ideas</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                Picked around your household’s dietary preferences.
-              </ThemedText>
+            <View style={{ gap: Spacing.field }}>
+              <TextGroup>
+                <ThemedText type="subtitle">A few ideas</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Picked around your household’s dietary preferences.
+                </ThemedText>
+              </TextGroup>
               <View style={ui.wrap}>
                 {CATEGORIES.map((c) => (
                   <Chip
@@ -339,13 +353,8 @@ function TodayContent() {
                 .map((option) => (
                   <Card key={option.recipeId}>
                     <View style={ui.row}>
-                      <View style={{ flex: 1, gap: 4 }}>
-                        <ThemedText
-                          type="default"
-                          style={{ fontWeight: '700' }}
-                        >
-                          {option.name}
-                        </ThemedText>
+                      <View style={{ flex: 1, gap: Spacing.micro }}>
+                        <ThemedText type="bodyBold">{option.name}</ThemedText>
                         <ThemedText type="small" themeColor="textSecondary">
                           {option.cuisine.replaceAll('_', ' ')} ·{' '}
                           {dietLabel(option.dietClass)}
@@ -370,18 +379,26 @@ function TodayContent() {
                   No more suggestions here. Search for something you like.
                 </ThemedText>
               )}
-              <Button secondary onPress={() => setSearchOpen(true)}>
+              <Button
+                secondary
+                onPress={() => {
+                  action.setError(null);
+                  setSearchOpen(true);
+                }}
+              >
                 Search for a dish
               </Button>
             </View>
           )}
           {cart.cartLines.length > 0 && !editable && (
             <Card>
-              <ThemedText type="subtitle">Next stop: your cook.</ThemedText>
-              <ThemedText themeColor="textSecondary">
-                Check the message and its delivery status. You can send a
-                prepared message yourself through WhatsApp.
-              </ThemedText>
+              <TextGroup>
+                <ThemedText type="subtitle">Next stop: your cook.</ThemedText>
+                <ThemedText themeColor="textSecondary">
+                  Check the message and its delivery status. You can send a
+                  prepared message yourself through WhatsApp.
+                </ThemedText>
+              </TextGroup>
               <Button
                 secondary
                 onPress={() => router.push('/cook-message-preview')}
@@ -396,7 +413,7 @@ function TodayContent() {
               summary={`${cart.activity.length} recent updates`}
             >
               {cart.activity.slice(0, 6).map((entry) => (
-                <View key={entry.id} style={{ gap: 4 }}>
+                <View key={entry.id} style={{ gap: Spacing.micro }}>
                   <ThemedText type="small">
                     {entry.actorDisplayName ?? 'A housemate'}{' '}
                     {entry.eventType === 'attendance_change'
@@ -426,6 +443,7 @@ function TodayContent() {
         kind={category}
         onAdd={add}
         disabled={action.pending || !editable || headcount === 0}
+        addError={action.error}
       />
     </Screen>
   );
@@ -445,10 +463,8 @@ function MenuRow({
 }) {
   return (
     <Card>
-      <View style={{ gap: 6 }}>
-        <ThemedText style={{ fontWeight: '700', fontSize: 18 }}>
-          {line.name}
-        </ThemedText>
+      <View style={{ gap: Spacing.label }}>
+        <ThemedText type="itemTitle">{line.name}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
           {line.quantity} {line.quantity === 1 ? 'serving' : 'servings'}
           {line.updatedByDisplayName
@@ -457,24 +473,26 @@ function MenuRow({
         </ThemedText>
       </View>
       {editable && (
-        <View style={ui.row}>
+        <View style={[ui.row, { flexWrap: 'wrap' }]}>
           <View style={[ui.row, { justifyContent: 'flex-start' }]}>
             <Button
               secondary
               disabled={disabled}
+              icon="minus"
               label={`Decrease servings of ${line.name}`}
               onPress={() => onChange(line.quantity - 1)}
             >
-              −
+              {null}
             </Button>
             <ThemedText type="smallBold">{line.quantity}</ThemedText>
             <Button
+              icon="plus"
               secondary
               disabled={disabled || line.quantity >= headcount}
               label={`Increase servings of ${line.name}`}
               onPress={() => onChange(line.quantity + 1)}
             >
-              +
+              {null}
             </Button>
           </View>
           <Button
@@ -497,6 +515,7 @@ function Search({
   kind,
   onAdd,
   disabled,
+  addError,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -504,6 +523,7 @@ function Search({
   kind: RecipeKind;
   onAdd: (o: SuggestionView) => Promise<boolean>;
   disabled: boolean;
+  addError?: string | null;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SuggestionView[]>([]);
@@ -536,24 +556,41 @@ function Search({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <Screen>
-        <View style={ui.row}>
-          <ThemedText type="subtitle">Find your next dish</ThemedText>
-          <Button secondary onPress={onClose}>
+        <View style={[ui.row, { alignItems: 'flex-start' }]}>
+          <ThemedText type="subtitle" style={{ flex: 1 }}>
+            Find a dish
+          </ThemedText>
+          <Button textOnly onPress={onClose}>
             Close
           </Button>
         </View>
+        <ThemedText type="small" themeColor="textSecondary">
+          Searching{' '}
+          {CATEGORIES.find(
+            (category) => category.kind === kind,
+          )?.label.toLowerCase()}{' '}
+          that match your household’s food preferences.
+        </ThemedText>
         <Field
           label="Dish name"
-          placeholder="Try dal, rice or paneer"
+          placeholder={
+            kind === 'main'
+              ? 'Try dal or paneer'
+              : kind === 'accompaniment'
+                ? 'Try rice or roti'
+                : 'Try salad or raita'
+          }
           autoFocus
           value={query}
           onChangeText={(value) => {
             setQuery(value);
+            setError('');
             setResults([]);
             setSearching(value.trim().length >= 2);
           }}
         />
         {error && <Notice error>{error}</Notice>}
+        {addError && <Notice error>{addError}</Notice>}
         {searching && <Loading label="Finding dishes…" />}
         {!searching &&
           query.trim().length >= 2 &&
@@ -573,7 +610,8 @@ function Search({
           <Card key={option.recipeId}>
             <ThemedText>{option.name}</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
-              {option.cuisine} · {dietLabel(option.dietClass)}
+              {option.cuisine.replaceAll('_', ' ')} ·{' '}
+              {dietLabel(option.dietClass)}
             </ThemedText>
             <Button
               disabled={disabled || option.inCart}

@@ -79,15 +79,15 @@ export const Fonts = Platform.select({
   },
 });
 
-// Organic's 1.10x density scale (--space-* in styles.css), rounded to whole px.
+// Mobile adaptation of Organic. Relationships use a mobile spacing scale;
+// see docs/mobile-design-system.md for the component roles.
 export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 9,
-  three: 17,
-  four: 26,
-  five: 35,
-  six: 64,
+  micro: 4,
+  label: 8,
+  inline: 12,
+  field: 16,
+  section: 24,
+  spacious: 32,
 } as const;
 
 export const Radius = {
@@ -98,4 +98,11 @@ export const Radius = {
 } as const;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const MaxContentWidth = 680;
+export const Layout = {
+  gutter: 20,
+  maxWidth: MaxContentWidth,
+  touchTarget: 44,
+  controlHeight: 48,
+  readingWidth: 430,
+} as const;

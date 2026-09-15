@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
-import { Text, useColorScheme } from 'react-native';
-import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from 'react-native';
+import { Colors, Fonts, Spacing } from '@/constants/theme';
+import { Icon } from './icon';
 export default function AppTabs() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
@@ -14,8 +15,8 @@ export default function AppTabs() {
           backgroundColor: colors.background,
           borderTopColor: colors.divider,
           height: 72,
-          paddingTop: 8,
-          paddingBottom: 8,
+          paddingTop: Spacing.label,
+          paddingBottom: Spacing.label,
         },
         tabBarLabelStyle: { fontFamily: Fonts.bodyBold, fontSize: 12 },
         sceneStyle: { backgroundColor: colors.background },
@@ -26,7 +27,7 @@ export default function AppTabs() {
         options={{
           title: 'Today',
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 26 }}>⌂</Text>
+            <Icon name="home" color={color} size={24} />
           ),
         }}
       />
@@ -35,7 +36,7 @@ export default function AppTabs() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 23 }}>⚙</Text>
+            <Icon name="settings" color={color} size={24} />
           ),
         }}
       />

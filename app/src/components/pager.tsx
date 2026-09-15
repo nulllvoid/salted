@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  Pressable,
+  Platform,
   ScrollView,
   View,
   type LayoutChangeEvent,
@@ -8,6 +8,8 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
+import { InteractivePressable as Pressable } from './interactive-pressable';
+import { Layout, Radius, Spacing } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { Loading, ui } from '@/components/ui';
 import { useTheme } from '@/hooks/use-theme';
@@ -30,14 +32,21 @@ export interface PagerPage {
 export function Pager({
   pages,
   a11yLabel,
+  initialPageKey,
 }: {
   pages: PagerPage[];
   a11yLabel: string;
+  initialPageKey?: string;
 }) {
   const theme = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   const [width, setWidth] = useState(0);
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState(() =>
+    Math.max(
+      0,
+      pages.findIndex((page) => page.key === initialPageKey),
+    ),
+  );
 
   function onLayout(event: LayoutChangeEvent) {
     // Measure the pager's own box rather than the window: the tab navigator
@@ -45,6 +54,13 @@ export function Pager({
     // maxWidth. Only a real measurement keeps the snap interval equal to the
     // page width at both 420px and desktop widths.
     const next = event.nativeEvent.layout.width;
+    if (next !== width) {
+      // Resizing can clamp the old offset before the new pages are laid out.
+      // Those synthetic scroll events must not change the selected section.
+      animatingToTap.current = true;
+      if (tapSettleTimer.current) clearTimeout(tapSettleTimer.current);
+      tapSettleTimer.current = setTimeout(endTapAnimation, 600);
+    }
     setWidth((current) => (current === next ? current : next));
   }
 
@@ -61,10 +77,21 @@ export function Pager({
   }
 
   function onSettled(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (
+      animatingToTap.current ||
+      Math.abs(event.nativeEvent.layoutMeasurement.width - width) > 1
+    )
+      return;
     // A drag or fling ending means the user is driving, so hand tracking back
     // even if a tap animation was still notionally in flight.
     endTapAnimation();
-    setActive(pageIndexFromOffset(event.nativeEvent.contentOffset.x, width, pages.length));
+    setActive(
+      pageIndexFromOffset(
+        event.nativeEvent.contentOffset.x,
+        width,
+        pages.length,
+      ),
+    );
   }
 
   // Track the offset DURING the gesture, not only when it ends.
@@ -81,7 +108,11 @@ export function Pager({
     // reports every intermediate offset, starting next to the page being left.
     // Following those made a tap visibly snap back to the old tab and walk
     // forward again, once per page crossed.
-    if (animatingToTap.current) return;
+    if (
+      animatingToTap.current ||
+      Math.abs(event.nativeEvent.layoutMeasurement.width - width) > 1
+    )
+      return;
     const next = pageIndexFromOffset(
       event.nativeEvent.contentOffset.x,
       width,
@@ -100,7 +131,10 @@ export function Pager({
     // that tracking is live again well before a considered second tap.
     if (tapSettleTimer.current) clearTimeout(tapSettleTimer.current);
     tapSettleTimer.current = setTimeout(endTapAnimation, 600);
-    scrollRef.current?.scrollTo({ x: offsetForIndex(index, width), animated: true });
+    scrollRef.current?.scrollTo({
+      x: offsetForIndex(index, width),
+      animated: true,
+    });
   }
 
   // A pending timer must not fire into an unmounted component, and a settings
@@ -111,7 +145,10 @@ export function Pager({
     // A resize or rotation changes the snap interval, which would otherwise
     // leave the pager parked between two pages. Re-pin to the active page.
     if (width) {
-      scrollRef.current?.scrollTo({ x: offsetForIndex(active, width), animated: false });
+      scrollRef.current?.scrollTo({
+        x: offsetForIndex(active, width),
+        animated: false,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-pin on resize only; including `active` would fight the user's own swipe
   }, [width]);
@@ -131,13 +168,13 @@ export function Pager({
           one of these" control rather than a new idiom. */}
       <View
         style={{
-          paddingHorizontal: 20,
-          paddingTop: 12,
+          paddingHorizontal: Layout.gutter,
+          paddingTop: Spacing.inline,
           width: '100%',
           // Mirrors ui.screen, which each page applies to its own content:
           // without it the control sits flush left on a wide screen while the
           // content it switches between is centred.
-          maxWidth: 680,
+          maxWidth: Layout.maxWidth,
           alignSelf: 'center',
         }}
       >
@@ -146,7 +183,7 @@ export function Pager({
           accessibilityLabel={a11yLabel}
           style={{
             flexDirection: 'row',
-            borderRadius: 999,
+            borderRadius: Radius.pill,
             borderWidth: 1,
             borderColor: theme.divider,
             backgroundColor: theme.backgroundElement,
@@ -179,19 +216,17 @@ export function Pager({
                   // than the screen.
                   flex: 1,
                   minWidth: 0,
-                  minHeight: 44,
+                  minHeight: Layout.touchTarget,
                   justifyContent: 'center',
                   alignItems: 'center',
-                  paddingHorizontal: 6,
-                  paddingVertical: 10,
+                  paddingHorizontal: Spacing.micro,
+                  paddingVertical: Spacing.inline,
                   backgroundColor: selected ? theme.accentText : 'transparent',
                 }}
               >
                 <ThemedText
                   type="smallBold"
-                  // Truncate rather than wrap: a two-line segment would grow
-                  // the whole track's height for one long label.
-                  numberOfLines={1}
+                  // Allow enlarged text to wrap instead of hiding destinations.
                   style={{
                     color: selected ? theme.background : theme.text,
                     textAlign: 'center',
@@ -217,14 +252,21 @@ export function Pager({
           // Both handlers: momentum fires on native flings, end-drag is what
           // fires on a web mouse drag.
           onScroll={onScroll}
+          onScrollBeginDrag={endTapAnimation}
           onMomentumScrollEnd={onSettled}
           onScrollEndDrag={onSettled}
           scrollEventThrottle={16}
           style={{ flex: 1 }}
         >
-          {pages.map((page) => (
+          {pages.map((page, index) => (
             <View
               key={page.key}
+              accessibilityElementsHidden={active !== index}
+              importantForAccessibility={
+                active === index ? 'auto' : 'no-hide-descendants'
+              }
+              aria-hidden={active !== index}
+              {...(Platform.OS === 'web' ? { inert: active !== index } : {})}
               // No accessibilityRole here: React Native's AccessibilityRole
               // union has no "tabpanel" (unlike "tab"/"tablist" above). The
               // label alone still maps to aria-label on RN-web, which is what

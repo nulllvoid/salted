@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import { InteractivePressable as Pressable } from './interactive-pressable';
+import { Layout, Radius, Spacing } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Screen } from '@/components/ui';
 import { useTheme } from '@/hooks/use-theme';
@@ -176,9 +178,7 @@ export function FeatureSlides({
     <Screen scroll={false}>
       <View style={styles.frame}>
         <View style={styles.header}>
-          <ThemedText type="subtitle" style={{ fontSize: 27 }}>
-            Salted
-          </ThemedText>
+          <ThemedText type="brandSmall">Salted</ThemedText>
           <Pressable
             accessibilityRole="button"
             onPress={onDone}
@@ -225,7 +225,7 @@ export function FeatureSlides({
                 >
                   <View style={styles.copy}>
                     <FeatureArt index={index} />
-                    <ThemedText type="title" style={styles.title}>
+                    <ThemedText type="hero" style={styles.title}>
                       {slide.title}
                     </ThemedText>
                     <ThemedText
@@ -260,7 +260,7 @@ export function FeatureSlides({
                   style={{
                     height: 7,
                     width: active === index ? 24 : 7,
-                    borderRadius: 4,
+                    borderRadius: Radius.pill,
                     backgroundColor:
                       active === index ? theme.accentText : theme.divider,
                   }}
@@ -277,34 +277,48 @@ export function FeatureSlides({
   );
 }
 const styles = StyleSheet.create({
-  frame: { flex: 1, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  frame: {
+    flex: 1,
+    width: '100%',
+    maxWidth: Layout.maxWidth,
+    alignSelf: 'center',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingTop: 8,
+    paddingHorizontal: Layout.gutter,
+    paddingTop: Spacing.label,
   },
   skip: {
-    minHeight: 48,
-    minWidth: 48,
+    minHeight: Layout.controlHeight,
+    minWidth: Layout.controlHeight,
     justifyContent: 'center',
     alignItems: 'center',
   },
   page: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 28,
-    paddingVertical: 16,
+    paddingHorizontal: Layout.gutter,
+    paddingVertical: Spacing.field,
   },
-  copy: { width: '100%', maxWidth: 430, alignSelf: 'center', gap: 20 },
-  title: { fontSize: 34, lineHeight: 41, textAlign: 'center' },
-  description: { textAlign: 'center', lineHeight: 25 },
-  footer: { paddingHorizontal: 24, paddingBottom: 16, gap: 10 },
+  copy: {
+    width: '100%',
+    maxWidth: Layout.readingWidth,
+    alignSelf: 'center',
+    gap: Spacing.section,
+  },
+  title: { textAlign: 'center' },
+  description: { textAlign: 'center' },
+  footer: {
+    paddingHorizontal: Layout.gutter,
+    paddingBottom: Spacing.field,
+    gap: Spacing.label,
+  },
   dots: { flexDirection: 'row', justifyContent: 'center' },
   dotTarget: {
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: Layout.touchTarget,
+    minHeight: Layout.touchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },

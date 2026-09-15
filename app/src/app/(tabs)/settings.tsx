@@ -1,4 +1,7 @@
+import { TextGroup } from '@/components/text-group';
+import { Layout, Spacing } from '@/constants/theme';
 import { View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 
 import { Pager, type PagerPage } from '@/components/pager';
 import { HouseholdPage } from '@/components/settings/household-page';
@@ -32,12 +35,16 @@ import { Screen } from '@/components/ui';
 // meal schedules, and "Home" for the household itself.
 const PAGES: PagerPage[] = [
   { key: 'profile', label: 'Profile', render: () => <ProfilePage /> },
-  { key: 'preferences', label: 'Meals', render: () => <MealsPage /> },
+  { key: 'meals', label: 'Meals', render: () => <MealsPage /> },
   { key: 'household', label: 'Home', render: () => <HouseholdPage /> },
   { key: 'about', label: 'About', render: () => <AboutPage /> },
 ];
 
 export default function SettingsScreen() {
+  const { section } = useLocalSearchParams<{ section?: string }>();
+  const initialPageKey = PAGES.some((page) => page.key === section)
+    ? section
+    : 'profile';
   return (
     <Screen scroll={false}>
       {/* Padding and width are explicit here: with scroll={false} the Screen no
@@ -47,23 +54,30 @@ export default function SettingsScreen() {
           content is centred — two columns that look unrelated. */}
       <View
         style={{
-          gap: 8,
-          paddingHorizontal: 20,
-          paddingTop: 20,
+          gap: Spacing.label,
+          paddingHorizontal: Layout.gutter,
+          paddingTop: Layout.gutter,
           width: '100%',
-          maxWidth: 680,
+          maxWidth: Layout.maxWidth,
           alignSelf: 'center',
         }}
       >
-        <ThemedText type="smallBold" themeColor="accentText">
-          MAKE YOURSELF AT HOME
-        </ThemedText>
-        <ThemedText type="title">Settings</ThemedText>
-        <ThemedText themeColor="textSecondary">
-          A few details for meals that work for everyone.
-        </ThemedText>
+        <TextGroup>
+          <ThemedText type="eyebrow" themeColor="accentText">
+            MAKE YOURSELF AT HOME
+          </ThemedText>
+          <ThemedText type="title">Settings</ThemedText>
+          <ThemedText themeColor="textSecondary">
+            A few details for meals that work for everyone.
+          </ThemedText>
+        </TextGroup>
       </View>
-      <Pager pages={PAGES} a11yLabel="Settings sections" />
+      <Pager
+        key={initialPageKey}
+        initialPageKey={initialPageKey}
+        pages={PAGES}
+        a11yLabel="Settings sections"
+      />
     </Screen>
   );
 }
