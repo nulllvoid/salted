@@ -287,10 +287,16 @@ try {
   });
   await page.goto('http://localhost:8081/settings');
   await page.getByText('Your preferences', { exact: true }).waitFor();
+  // The launch animation overlays the rendered screen, so a screenshot taken
+  // on content alone captures the splash, not the app.
+  await page.getByTestId('animated-launch').waitFor({ state: 'detached' });
   await page.screenshot({
     path: 'app/e2e/artifacts/settings-mobile.png',
     fullPage: true,
   });
+  // Settings opens on Profile, and its sections are a segmented control
+  // (role="tab"), so meal schedules need their tab selected first.
+  await page.getByRole('tab', { name: 'Meals', exact: true }).click();
   await page.getByRole('button', { name: /Dinner Served/ }).click();
   await page
     .getByRole('textbox', { name: 'Close menu at', exact: true })
@@ -349,10 +355,13 @@ try {
   const loggedOut = await browser.newPage({
     viewport: { width: 390, height: 844 },
   });
-  await loggedOut.goto('http://localhost:8081/onboarding');
+  // /onboarding is the first-run slide carousel for a browser that has never
+  // seen it; the sign-in options live one step further on.
+  await loggedOut.goto('http://localhost:8081/onboarding/login');
   await loggedOut
     .getByRole('button', { name: 'Continue with Google' })
     .waitFor();
+  await loggedOut.getByTestId('animated-launch').waitFor({ state: 'detached' });
   await loggedOut.screenshot({
     path: 'app/e2e/artifacts/welcome-mobile.png',
     fullPage: true,
