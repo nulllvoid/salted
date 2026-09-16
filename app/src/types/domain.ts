@@ -18,6 +18,11 @@ export type IngredientUnit =
 export type IngredientCategory =
   'vegetable' | 'dairy' | 'staple' | 'protein' | 'other';
 
+// Ceiling for item-counted dishes (roti, dosa), which headcount does not cap.
+// Mirrors validate_cart_dish's own limit — the database is the enforcer; this
+// keeps the stepper and the write path from walking past it.
+export const ITEM_COUNT_MAX = 99;
+
 // A shared, live-edited cart line (cart_items row) — one per (poll, recipe),
 // NOT per-user. quantity is the single shared value all members see and
 // edit.

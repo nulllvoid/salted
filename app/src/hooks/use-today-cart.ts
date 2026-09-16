@@ -4,6 +4,7 @@ import { useActiveGroup } from '@/contexts/active-group';
 import { useResource } from './use-resource';
 import { supabase } from '@/lib/supabase';
 import type { Json } from '@/types/database';
+import { ITEM_COUNT_MAX } from '@/types/domain';
 import type {
   ActivityEntry,
   CartLineView,
@@ -386,6 +387,10 @@ export function useTodayCart(
   // out" in the few seconds since last load). Returns whether the
   // requested quantity got capped, so callers (the + stepper) can tell the
   // user why a tap did nothing rather than failing silently.
+  //
+  // Item-counted dishes (roti, dosa) count pieces, so headcount is not their
+  // cap — two people may want five rotis. They take ITEM_COUNT_MAX instead,
+  // mirroring validate_cart_dish.
   async function setQuantity(
     recipeId: string,
     quantity: number,
@@ -396,7 +401,10 @@ export function useTodayCart(
       return { capped: false, headcount: 0 };
     }
     const freshHeadcount = await fetchHeadcount(cart.pollDate);
-    const cap = Math.max(freshHeadcount, 1);
+    const isItemCounted = !!cart.cartLines.find(
+      (line) => line.recipeId === recipeId,
+    )?.isItemCounted;
+    const cap = isItemCounted ? ITEM_COUNT_MAX : Math.max(freshHeadcount, 1);
     const capped = Math.min(quantity, cap);
     const wasCapped = quantity > cap;
     const previousQty = cart.cartLines.find(

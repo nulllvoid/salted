@@ -34,12 +34,8 @@ import {
 import { LockCountdown } from '@/components/lock-countdown';
 import { friendlyError } from '@/lib/errors';
 import { dietLabel } from '@/lib/diet-copy';
+import { ITEM_COUNT_MAX } from '@/types/domain';
 import type { CartLineView, RecipeKind, SuggestionView } from '@/types/domain';
-
-// Ceiling for item-counted dishes (roti, dosa), which headcount does not cap.
-// Mirrors validate_cart_dish's own limit — the database is the enforcer, this
-// only stops the stepper walking past it.
-const ITEM_COUNT_MAX = 99;
 
 const CATEGORIES: { kind: RecipeKind; label: string }[] = [
   { kind: 'main', label: 'Mains' },
