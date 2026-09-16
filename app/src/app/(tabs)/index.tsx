@@ -35,6 +35,12 @@ import { LockCountdown } from '@/components/lock-countdown';
 import { friendlyError } from '@/lib/errors';
 import { dietLabel } from '@/lib/diet-copy';
 import type { CartLineView, RecipeKind, SuggestionView } from '@/types/domain';
+
+// Ceiling for item-counted dishes (roti, dosa), which headcount does not cap.
+// Mirrors validate_cart_dish's own limit — the database is the enforcer, this
+// only stops the stepper walking past it.
+const ITEM_COUNT_MAX = 99;
+
 const CATEGORIES: { kind: RecipeKind; label: string }[] = [
   { kind: 'main', label: 'Mains' },
   { kind: 'accompaniment', label: 'Rice & breads' },
@@ -466,7 +472,9 @@ function MenuRow({
       <View style={{ gap: Spacing.label }}>
         <ThemedText type="itemTitle">{line.name}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          {line.quantity} {line.quantity === 1 ? 'serving' : 'servings'}
+          {line.isItemCounted
+            ? `${line.quantity} ×`
+            : `${line.quantity} ${line.quantity === 1 ? 'serving' : 'servings'}`}
           {line.updatedByDisplayName
             ? ` · edited by ${line.updatedByDisplayName}`
             : ''}
@@ -479,7 +487,7 @@ function MenuRow({
               secondary
               disabled={disabled}
               icon="minus"
-              label={`Decrease servings of ${line.name}`}
+              label={`Decrease ${line.isItemCounted ? 'count' : 'servings'} of ${line.name}`}
               onPress={() => onChange(line.quantity - 1)}
             >
               {null}
@@ -488,8 +496,10 @@ function MenuRow({
             <Button
               icon="plus"
               secondary
-              disabled={disabled || line.quantity >= headcount}
-              label={`Increase servings of ${line.name}`}
+              disabled={
+                disabled || line.quantity >= (line.isItemCounted ? ITEM_COUNT_MAX : headcount)
+              }
+              label={`Increase ${line.isItemCounted ? 'count' : 'servings'} of ${line.name}`}
               onPress={() => onChange(line.quantity + 1)}
             >
               {null}

@@ -823,6 +823,7 @@ export type Database = {
           image_path: string | null
           instructions_en: string
           is_active: boolean
+          is_item_counted: boolean
           jain_ok: boolean
           kind: string
           name: string
@@ -840,6 +841,7 @@ export type Database = {
           image_path?: string | null
           instructions_en: string
           is_active?: boolean
+          is_item_counted?: boolean
           jain_ok?: boolean
           kind?: string
           name: string
@@ -857,6 +859,7 @@ export type Database = {
           image_path?: string | null
           instructions_en?: string
           is_active?: boolean
+          is_item_counted?: boolean
           jain_ok?: boolean
           kind?: string
           name?: string

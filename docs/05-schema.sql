@@ -66,6 +66,7 @@ create table recipes (
   suitable_bases text[] not null default '{full}',  -- which flat_meals.basis values this dish suits
   instructions_en text not null,              -- imperative, written for the cook
   image_path text,
+  is_item_counted boolean not null default false,  -- cart quantity counts pieces, not portions: 2 people may want 5 rotis, so headcount is not a cap (roti/dosa/idli-likes)
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );

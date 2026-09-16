@@ -149,7 +149,7 @@ export function useTodayCart(
       supabase
         .from('cart_items')
         .select(
-          'recipe_id, quantity, recipes(name, cuisine, diet_class, kind), profiles:updated_by(display_name)',
+          'recipe_id, quantity, recipes(name, cuisine, diet_class, kind, is_item_counted), profiles:updated_by(display_name)',
         )
         .eq('poll_id', pollRow.id)
         .throwOnError(),
@@ -212,6 +212,7 @@ export function useTodayCart(
         dietClass: row.recipes!.diet_class as CartLineView['dietClass'],
         kind: row.recipes!.kind as CartLineView['kind'],
         quantity: row.quantity,
+        isItemCounted: row.recipes!.is_item_counted,
         updatedByDisplayName: row.profiles?.display_name ?? null,
       }));
 

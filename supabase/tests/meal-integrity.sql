@@ -34,6 +34,26 @@ begin
     raise exception 'Invalid schedule accepted';
   exception when check_violation then null;
   end;
+  -- Item-counted dishes count pieces, not portions: two people may want five
+  -- rotis, so headcount is not a cap — but a fat-fingered 500 still cannot
+  -- reach the cook.
+  select id into r from public.recipes where name='Roti' and is_item_counted;
+  if r is null then raise exception 'Roti is not marked item-counted'; end if;
+  insert into public.cart_items(poll_id,recipe_id,quantity,added_by,updated_by) select id,r,5,auth.uid(),auth.uid() from release_poll;
+  if not exists(select 1 from public.cart_items where poll_id=(select id from release_poll) and recipe_id=r and quantity=5) then
+    raise exception 'Item-counted dish rejected above headcount'; end if;
+  begin
+    update public.cart_items set quantity=100 where poll_id=(select id from release_poll) and recipe_id=r;
+    raise exception 'Item-counted ceiling not enforced';
+  exception when raise_exception then
+    if sqlerrm <> 'Quantity is too large' then raise; end if;
+  end;
+  begin
+    update public.cart_items set quantity=0 where poll_id=(select id from release_poll) and recipe_id=r;
+    raise exception 'Zero quantity accepted';
+  exception when raise_exception then
+    if sqlerrm <> 'Quantity must be at least 1' then raise; end if;
+  end;
 end $$;
 reset role;
-select 'dietary veto, quantity cap, meal attendance isolation and schedule validation passed' as verification;
+select 'dietary veto, quantity cap, item counts, meal attendance isolation and schedule validation passed' as verification;

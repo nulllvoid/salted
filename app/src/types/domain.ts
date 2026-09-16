@@ -28,6 +28,9 @@ export interface CartLineView {
   dietClass: DietType;
   kind: RecipeKind;
   quantity: number;
+  // Counts pieces rather than portions (roti, dosa): headcount is the default
+  // but not a cap, since 2 people may want 5 rotis.
+  isItemCounted: boolean;
   updatedByDisplayName: string | null; // "last edited by X" social-proof equivalent
 }
 
