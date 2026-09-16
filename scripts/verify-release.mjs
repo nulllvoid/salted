@@ -112,7 +112,7 @@ try {
     );
   const recipes = (
     await db.query(
-      "select id,slug from recipes where slug in ('dal-tadka','palak-paneer','poha')",
+      "select id,slug,name,is_item_counted from recipes where slug in ('dal-tadka','palak-paneer','poha') or name='Roti'",
     )
   ).rows;
   for (let i = 0; i < 2; i++)
@@ -120,6 +120,14 @@ try {
       'insert into poll_options(poll_id,recipe_id,position) values($1,$2,1)',
       [polls[i], recipes.find((r) => r.slug === (i ? 'poha' : 'dal-tadka')).id],
     );
+  // Roti is item-counted: the cart counts pieces, so headcount is its default
+  // but not its cap.
+  const roti = recipes.find((r) => r.name === 'Roti');
+  assert(roti?.is_item_counted === true, 'Roti is not flagged item-counted');
+  await db.query(
+    'insert into poll_accompaniment_options(poll_id,recipe_id,position) values($1,$2,1)',
+    [polls[0], roti.id],
+  );
   await db.query(
     "insert into cooks(flat_id,name,phone,language) values($1,'Sunita','+919999999999','en')",
     [household],
@@ -174,6 +182,41 @@ try {
     ).rows[0]?.quantity === 2,
     'Cart did not save correct headcount',
   );
+  // An item-counted dish climbs past headcount: two people may want five
+  // rotis. The cap lives in three places (trigger, stepper, setQuantity's
+  // re-fetched clamp) and a silent clamp in any one of them looks exactly
+  // like a stepper that does nothing.
+  await page.getByRole('button', { name: 'Rice & breads' }).click();
+  await page.getByRole('button', { name: 'Add Roti', exact: true }).click();
+  const rotiPlus = page.getByRole('button', {
+    name: 'Increase count of Roti',
+  });
+  await rotiPlus.waitFor();
+  assert(
+    await page.getByRole('button', { name: 'Increase servings of Dal Tadka' }).isDisabled(),
+    'Portion dish should stop at headcount',
+  );
+  for (let i = 0; i < 3; i++) {
+    await rotiPlus.click();
+    await page
+      .getByText(`${3 + i} ×`)
+      .waitFor()
+      .catch(() => {
+        throw new Error(
+          `Item count stuck at ${2 + i}: a headcount cap is still clamping an item-counted dish`,
+        );
+      });
+  }
+  assert(
+    (
+      await db.query(
+        'select quantity from cart_items where poll_id=$1 and recipe_id=$2',
+        [polls[0], roti.id],
+      )
+    ).rows[0]?.quantity === 5,
+    'Item-counted dish did not climb past headcount',
+  );
+  await page.getByRole('button', { name: 'Remove Roti', exact: true }).click();
   mkdirSync('app/e2e/artifacts', { recursive: true });
   await page.getByText('SALTED / YOUR SHARED TABLE').scrollIntoViewIfNeeded();
   await page.screenshot({
