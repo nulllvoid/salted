@@ -2,71 +2,104 @@
 
 ## Setup (start day 1 — longest lead time in the project)
 
-1. Pick BSP: compare **AiSensy** vs **Interakt** on onboarding speed + per-message utility rate (India utility messages are cheap, roughly ₹0.12–0.35; confirm current rates). Either works; pick whichever verifies fastest.
-2. Through the BSP: create Meta Business Manager, verify business, register a WhatsApp Business number (use a fresh SIM/virtual number, NOT the founder's personal number).
-3. Submit the utility templates below for **hi, kn, en** and wait for approval (hours–days, occasionally longer).
-4. Configure BSP webhook URL → Supabase Edge Function `wa_webhook` for delivery statuses.
+**Decided (18 Sep 2026): Meta Cloud API direct, no BSP.** Flatmeal sends one
+utility message per flat per meal — no marketing, no storefront, no inbox — so
+a BSP's ₹999–2399/month buys nothing we use, and the Meta app, webhook and
+template composition were already built. ~₹0.115/utility message direct
+against a BSP markup of 10–30% plus subscription. The trade is that number
+registration and business verification are self-service.
 
-## Template drafts (category: UTILITY)
+The send client is `supabase/functions/_shared/whatsapp.ts`, deliberately
+domain-agnostic: swapping to a BSP later means replacing that one file.
 
-Meta approves the template *shell*; variables are filled at send time with already-translated content, so one template per language is enough.
+1. Create Meta Business Manager, verify the business, register a WhatsApp
+   Business number (fresh SIM/virtual number, NOT the founder's personal one).
+2. Submit the `cook_menu` template below for **hi, kn, en** and wait for
+   approval (hours–days, occasionally longer).
+3. Set Edge Function secrets `WHATSAPP_ACCESS_TOKEN` and
+   `WHATSAPP_PHONE_NUMBER_ID`.
+4. Configure the webhook → `wa_webhook` for delivery statuses (see
+   `docs/whatsapp-webhook-setup.md`; already done).
 
-**Name:** `daily_cook_instructions` · **Language:** hi
+## Template (category: UTILITY)
+
+Meta approves the template *shell* per language and renders it from the
+`language.code` we send, so we translate nothing about it at send time.
+
+**Name:** `cook_menu` · **Language:** hi
 
 ```
 नमस्ते {{1}} 🙏
-आज का खाना: *{{2}}*
-{{3}} लोगों के लिए बनाना है।
+आज का खाना:
+{{2}}
 
-सामग्री: {{4}}
-
-बनाने का तरीका:
-{{5}}
-
-नोट: {{6}}
+नोट: {{3}}
 ```
 
 **Language:** kn
 
 ```
 ನಮಸ್ಕಾರ {{1}} 🙏
-ಇಂದಿನ ಅಡುಗೆ: *{{2}}*
-{{3}} ಜನರಿಗೆ ಮಾಡಬೇಕು.
+ಇಂದಿನ ಅಡುಗೆ:
+{{2}}
 
-ಬೇಕಾಗುವ ಸಾಮಗ್ರಿ: {{4}}
-
-ಮಾಡುವ ವಿಧಾನ:
-{{5}}
-
-ಸೂಚನೆ: {{6}}
+ಸೂಚನೆ: {{3}}
 ```
 
 **Language:** en
 
 ```
 Hello {{1}} 🙏
-Today's meal: *{{2}}*
-Please cook for {{3}} people.
+Today's meal:
+{{2}}
 
-Ingredients: {{4}}
-
-Method:
-{{5}}
-
-Note: {{6}}
+Note: {{3}}
 ```
 
-Variables: 1 cook name · 2 dish name (keep dish name as-is, transliterate only if reviewed) · 3 headcount digit · 4 scaled key-ingredient line (translated) · 5 instruction body (from `recipe_translations` reviewed cache) · 6 flat note (live-translated; default "—").
+### Why ingredients and method are not in it
 
-Template rules to respect: no variable at the very start or end floating alone, no promo language (must stay UTILITY category), sample values required at submission.
+The earlier six-variable `daily_cook_instructions` draft carried ingredients
+and cooking method. Measured against real `dispatch_log` rows, those payloads
+run **580–3783 characters** — Meta's limit is 1024, applied to the *rendered*
+message. Nothing short of truncating the instructions fit.
+
+The cook already knows how to cook. They need what to make, how much of each,
+and anything the flat specifically wants; ingredients are the flatmates'
+concern (that is what the grocery screen is for). The three-variable message
+renders at ~50–260 characters on real carts, with a pathological 2000-char
+note still trimming to 643.
+
+Knock-on effect: `recipe_translations`, live method translation and the
+`reviewed_at = null` review workflow all leave the dispatch path. The ~80
+translation quality gate below is no longer a pilot blocker — machine
+translation of cooking verbs was the most likely embarrassment point in this
+document, and it is now off the critical path.
+
+Variables: 1 cook name · 2 dish list, each line `N × Dish` comma-joined (dish
+names stay as-is, transliterate only if reviewed) · 3 flat note
+(live-translated; default "—").
+
+The count leads because recipe names carry their own brackets — "Akki Rotti
+(Rice Flatbread) (for 2)" is ambiguous about which number is the serving
+count. A bare number also reads correctly for both portions and item counts
+(`5 × Roti` is five rotis, not five people's worth — see `recipes.is_item_counted`).
+
+Template rules to respect: no variable at the very start or end floating alone, no promo language (must stay UTILITY category), sample values required at submission. **A variable may not contain a newline or a run of more than four spaces**, and the 1024 limit counts the rendered message — `compose-template.ts` enforces both rather than letting Meta refuse the send.
 
 ## Composition pipeline (in `dispatch_cook`)
 
-1. Build English payload from winner + headcount + scaled ingredients + `flat_note`.
-2. Body translation: read `recipe_translations(recipe_id, cook.language)`; if missing → Google Translate → insert with `reviewed_at = null` (flagged for human review).
-3. Flat note: live Google Translate each time (short, dynamic).
-4. Fill template variables → BSP send API → `dispatch_log`.
+1. Build the English payload from the cart + `flat_note` — this is the in-app
+   preview and `wa.me` fallback text, not what the template carries.
+2. Compose the three template variables (`compose-template.ts`).
+3. Flat note: live Google Translate each time (short, dynamic); falls back to
+   English when `GOOGLE_TRANSLATE_API_KEY` is unset.
+4. `sendTemplate()` → Meta Cloud API → `bsp_message_id` → `dispatch_log`.
 5. `DISPATCH_MODE=mock` skips step 4's network call and logs status `mocked`.
+
+A send failure is logged with Meta's own error and **never retried**: the poll
+flips to `dispatched` either way, and a cook message arriving hours late is
+worse than none (the same reasoning as `DISPATCH_GRACE_MINUTES`). The fallback
+below still works in that case.
 
 ## Fallback (ships regardless of Meta approval)
 

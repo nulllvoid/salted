@@ -19,11 +19,11 @@
 //      is always live-translated (short, dynamic, never cached). If no
 //      translation is cached AND GOOGLE_TRANSLATE_API_KEY is unset, falls
 //      back to the English payload rather than blocking dispatch.
-//   5. Fill WhatsApp template variables, call BSP send API — unless
-//      DISPATCH_MODE=mock, which skips the network call and logs
-//      status='mocked' instead. This must work end-to-end before Meta
-//      template approval lands. Live BSP send is not implemented (no BSP
-//      account provisioned yet) — mode='live' logs status='failed'.
+//   5. Fill the cook_menu template variables and send via the Meta Cloud API
+//      (_shared/whatsapp.ts) — unless DISPATCH_MODE=mock, which skips the
+//      network call and logs status='mocked' instead. The template carries
+//      dish counts and the flat note only; ingredients and method are not in
+//      it (see compose-template.ts). A send failure is logged, never retried.
 //   6. Insert dispatch_log row; wa_webhook updates status afterwards.
 
 import { createAdminClient } from '../_shared/supabase-admin.ts';
@@ -42,9 +42,15 @@ import {
   type DishLine,
   type RecipeIngredientRow,
 } from './compose-payload.ts';
+import { composeTemplateVariables } from './compose-template.ts';
+import { sendTemplate } from '../_shared/whatsapp.ts';
 import { translateText } from './translate.ts';
 
 type DispatchMode = 'mock' | 'live';
+
+// The UTILITY template approved with Meta for hi/kn/en. Its shell is
+// Meta-side per language, so only the variables are composed here.
+const COOK_TEMPLATE_NAME = 'cook_menu';
 
 // A meal can be dispatched the evening before it is served, so today's and
 // tomorrow's servings are both candidates each tick (mirrors create_poll).
@@ -226,11 +232,29 @@ async function dispatchForMeal(
     let error: string | null = null;
 
     if (mode === 'live') {
-      // No BSP account provisioned yet (docs/06-whatsapp-integration.md
-      // "Setup" is a manual, day-1 prerequisite not yet done) — live send
-      // cannot succeed until a BSP API key/account exists.
-      status = 'failed';
-      error = 'live dispatch not yet implemented — no BSP account configured';
+      // Step 5: fill the approved cook_menu template and send. No retry on
+      // failure, deliberately: the poll flips to 'dispatched' either way and
+      // a cook message arriving late is worse than none (same reasoning as
+      // DISPATCH_GRACE_MINUTES). The flat can still hand the prepared
+      // message over from the cook-message screen.
+      try {
+        bspMessageId = await sendTemplate({
+          accessToken: Deno.env.get('WHATSAPP_ACCESS_TOKEN') ?? '',
+          phoneNumberId: Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') ?? '',
+          to: cook.phone,
+          template: COOK_TEMPLATE_NAME,
+          language: cook.language,
+          variables: composeTemplateVariables({
+            cookName: cook.name,
+            dishes,
+            note: poll.flat_note,
+          }),
+        });
+        status = 'sent';
+      } catch (err) {
+        status = 'failed';
+        error = err instanceof Error ? err.message : 'WhatsApp send failed';
+      }
     }
 
     await admin.from('dispatch_log').insert({

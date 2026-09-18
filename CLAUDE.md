@@ -6,7 +6,7 @@ Read this before doing anything. Then read `docs/02-prd.md` and `docs/03-mvp-spe
 
 ## Repo status
 
-Wired to a real Supabase project (`pcmtsfcjzoivagpslpch`) — not a local/mock setup. `/app` queries Supabase directly (auth, the shared cart, grocery list, settings all live). `/supabase`'s `create_poll`, `close_poll`, and `dispatch_cook` Edge Functions are fully implemented (dietary veto, 10-day exclusion, variety heuristic, per-dish ingredient scaling, translation cache with graceful fallback) and deployed; `dispatch_cook`'s live BSP send is still unimplemented (mock mode only — no BSP account provisioned yet). pg_cron + pg_net are enabled and scheduled to invoke all three functions every 15 minutes (`supabase/migrations/20260108000003_pg_cron.sql`); each function self-selects which **meals** are due by comparing `flat_meals` wall-clock times against current IST. The scheduling unit is a row in `flat_meals`, not a flat: a flat serving breakfast and dinner gets two independent polls a day. A meal's poll can open on the day *before* it is served, so open/dispatch moments are computed backwards from `serve_time` (`supabase/functions/_shared/ist-time.ts`). All three stages **latch** on "due yet and not yet done" rather than "due in this exact 15-minute tick", so a tick lost to a failed cron run or an edited poll time is recovered on the next one instead of dropped for the day.
+Wired to a real Supabase project (`pcmtsfcjzoivagpslpch`) — not a local/mock setup. `/app` queries Supabase directly (auth, the shared cart, grocery list, settings all live). `/supabase`'s `create_poll`, `close_poll`, and `dispatch_cook` Edge Functions are fully implemented (dietary veto, 10-day exclusion, variety heuristic, per-dish ingredient scaling, translation cache with graceful fallback) and deployed; `dispatch_cook` sends via the **Meta Cloud API directly, not a BSP** (`_shared/whatsapp.ts`), and live sending is implemented but not yet exercised — it needs a registered WhatsApp Business number and an approved `cook_menu` template, neither of which exists yet, so `DISPATCH_MODE` stays `mock`. pg_cron + pg_net are enabled and scheduled to invoke all three functions every 15 minutes (`supabase/migrations/20260108000003_pg_cron.sql`); each function self-selects which **meals** are due by comparing `flat_meals` wall-clock times against current IST. The scheduling unit is a row in `flat_meals`, not a flat: a flat serving breakfast and dinner gets two independent polls a day. A meal's poll can open on the day *before* it is served, so open/dispatch moments are computed backwards from `serve_time` (`supabase/functions/_shared/ist-time.ts`). All three stages **latch** on "due yet and not yet done" rather than "due in this exact 15-minute tick", so a tick lost to a failed cron run or an edited poll time is recovered on the next one instead of dropped for the day.
 
 Dinner selection is a **shared, multi-item cart**, not a single-winner vote: `create_poll` seeds up to 3 main-course suggestions plus up to 3 accompaniment suggestions each day; any flatmate can tap a suggestion to add it to `cart_items` (one row per poll+recipe, not per-user) at a quantity defaulting to headcount, and any flatmate can edit any line's quantity or remove it while the poll is `open`. `close_poll` just locks the cart (flips status, enforced via RLS) — there is no winner, tie-break, or vote tally anywhere in the pipeline anymore. `dispatch_cook` composes one message covering every cart line, each dish scaled by its own cart quantity.
 
@@ -101,7 +101,7 @@ screen only appears once the poll is `closed`.
 | `docs/03-mvp-spec.md` | Screen-by-screen spec, flows, edge cases, the daily server pipeline |
 | `docs/04-architecture.md` | Tech stack, target repo layout, key decisions, dispatch sequence diagram |
 | `docs/05-schema.sql` | Postgres schema — **source of truth for the data model** |
-| `docs/06-whatsapp-integration.md` | BSP setup, Hindi/Kannada/English message templates, dispatch composition pipeline |
+| `docs/06-whatsapp-integration.md` | Meta Cloud API setup, Hindi/Kannada/English `cook_menu` template, dispatch composition pipeline |
 | `docs/07-roadmap-and-pilot.md` | 4-week build plan, pilot success metrics, decision gates |
 
 ## What this product is
@@ -112,7 +112,7 @@ Flatmates in Indian metros (pilot: Bengaluru) share a domestic cook. The app rem
 2. Flatmates tap suggestions to add them to a shared cart (async, edits visible to everyone live). Any member can adjust any dish's quantity or remove it. "I'm out today" toggle adjusts headcount, which is also the default/cap for cart quantities.
 3. **11:00** — the cart locks (no winner to pick — whatever's in the cart is tonight's menu).
 4. App renders the grocery list, each dish's ingredients scaled by its own cart quantity; a flatmate ticks off what's already in the kitchen and shares the rest to WhatsApp / copies it.
-5. **16:00** — every cart dish's name + quantity + scaled ingredients + notes are translated to the cook's language and sent via WhatsApp Business API (through a BSP).
+5. **16:00** — every cart dish's name + quantity, plus the flat's note, are sent to the cook over the WhatsApp Business API (Meta Cloud API direct) in their language. Ingredients and recipe method are deliberately *not* in that message — the cook knows how to cook, and the full payload never fit Meta's 1024-character template limit; see `docs/06-whatsapp-integration.md`.
 
 The clock times above describe the default dinner shape. They are per-meal settings on
 `flat_meals`, not flat-wide constants — see Conventions — and a household with several
@@ -124,7 +124,7 @@ The users are NOT cooks. They know dish names, not ingredients. The ingredient d
 
 - **App:** Expo (React Native) + TypeScript. Distribution: EAS Build APK links for pilot (Android-first), TestFlight later. EAS Update for OTA fixes.
 - **Backend:** Supabase — Postgres, Auth (phone/OTP or magic link), Realtime (live cart updates), Edge Functions + pg_cron (suggestion generation, cart lock, cook dispatch).
-- **WhatsApp:** BSP (AiSensy or Interakt) calling Meta WhatsApp Business API. Utility templates only. See `docs/06-whatsapp-integration.md`.
+- **WhatsApp:** Meta WhatsApp Cloud API **direct** — no BSP (decided 18 Sep 2026; a BSP's monthly fee buys an inbox/campaign builder/storefront integration Flatmeal uses none of). Utility templates only. See `docs/06-whatsapp-integration.md`.
 - **Translation:** Google Cloud Translate v1 (Hindi, Kannada first). TTS voice notes (Sarvam AI / Google TTS) are a stretch goal, week 4 only.
 
 ## Hard scope guardrails (v1)
@@ -143,7 +143,7 @@ DO NOT build, stub, or scaffold:
 - All user-visible times are IST (Asia/Kolkata). Poll times are configured **per meal** on `flat_meals` (`serve_time`, `open_offset_min`, `close_time`, `dispatch_offset_min`), defaults equivalent to 09:00 create / 11:00 close / 16:00 dispatch for a 20:30 dinner. `flats.poll_open_time` / `poll_close_time` / `dispatch_time` still exist and are still read by the app, but the Edge Functions no longer use them — part 3 migrates the UI and drops them.
 - Ingredient quantities are stored per-person; UI multiplies by each cart line's own quantity (which defaults to, and is capped by, current headcount — not a single flat-wide multiplier, since each dish in the cart can have a different quantity). Units must be purchasable (pieces, g, ml, packets). Spices/staples flagged `is_staple = true` and rendered as a single "check you have: …" line, not in the buy list.
 - Recipe instruction text is written for the cook, imperative, plain English; translation happens at dispatch time, never stored pre-translated (except optional ingredient name_hi/name_kn columns for list readability).
-- WhatsApp dispatch must be mockable: `DISPATCH_MODE=mock|live` env; mock logs payloads to `dispatch_log` without calling the BSP.
+- WhatsApp dispatch must be mockable: `DISPATCH_MODE=mock|live` env; mock logs payloads to `dispatch_log` without calling Meta. A live send failure is logged and **never retried** — the poll flips to `dispatched` regardless, because a cook message arriving hours late is worse than none.
 - Keep the app to its current surface: two tabs (Today / Settings), three stack routes off them (`grocery-list`, `cook-message-preview` modal, `who-is-eating` modal), plus the `onboarding/` flow. Push back on screen sprawl — a new *screen* needs justification; a new section on an existing screen usually doesn't.
 - RLS on every flat-scoped table: members can read/write only their own flat (`flat_id` match). `recipes`/`recipe_ingredients`/`recipe_translations` are global read-only to authenticated users; writes are service-role only.
 - Poll creation is deterministic and idempotent: option selection is seeded by `(flat_id, date)`, and `daily_polls` is keyed `unique (flat_id, poll_date, flat_meal_id)` — re-running `create_poll` for a flat/meal/day must not change or duplicate results.
@@ -156,9 +156,11 @@ DO NOT build, stub, or scaffold:
 
 A 3-person flat can: onboard, set cook phone + language, build tonight's shared cart daily with realtime updates, see a grocery checklist scaled per-dish for everything in the cart, share the missing-items list, and the cook receives a correctly translated WhatsApp message at dispatch time. Pilot metrics in `docs/07-roadmap-and-pilot.md`.
 
-Everything above is built except the last clause: dispatch composes and translates the
-message correctly and logs it, but the live BSP send is still unimplemented, so
-`DISPATCH_MODE=live` records `status='failed'` and only `mock` actually works. A
-flatmate can hand the prepared message to WhatsApp manually from the cook-message
-screen. Automatic delivery is the single largest gap between here and the pilot —
-see `docs/release-readiness.md` "Remaining before public distribution".
+Everything above is built, and the send path now exists end to end
+(`_shared/whatsapp.ts` → Meta Cloud API → `bsp_message_id` → `wa_webhook`
+delivery statuses). What is missing is no longer code but **Meta provisioning**:
+only the test number exists (5 pre-verified recipients) and `cook_menu` has not
+been submitted for approval, so `DISPATCH_MODE` stays `mock` and no real send
+has ever run. Until then a flatmate can hand the prepared message to WhatsApp
+from the cook-message screen. See `docs/release-readiness.md` "Remaining before
+public distribution".
