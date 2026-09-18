@@ -26,7 +26,7 @@ export function LockCountdown({ closesAt }: { closesAt: number }) {
           type="countdown"
           accessibilityLabel={`Menu locks in ${clock}, closes ${closesAtLabel}`}
         >
-          {clock}
+          {now >= closesAt ? 'Locking…' : clock}
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
           Closes {closesAtLabel}

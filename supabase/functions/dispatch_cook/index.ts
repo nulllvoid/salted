@@ -42,6 +42,7 @@ import {
   type DishLine,
   type RecipeIngredientRow,
 } from './compose-payload.ts';
+import { recordDispatch } from './record-dispatch.ts';
 import { translateText } from './translate.ts';
 
 type DispatchMode = 'mock' | 'live';
@@ -233,8 +234,7 @@ async function dispatchForMeal(
       error = 'live dispatch not yet implemented — no BSP account configured';
     }
 
-    await admin.from('dispatch_log').insert({
-      poll_id: poll.id,
+    await recordDispatch(admin, poll.id, {
       mode,
       language: cook.language,
       headcount,
@@ -244,9 +244,7 @@ async function dispatchForMeal(
       status,
       error,
     });
-
-    await admin.from('daily_polls').update({ status: 'dispatched' }).eq('id', poll.id);
-    return true;
+    return status !== 'failed';
   } catch (err) {
     await logPipelineError(admin, 'dispatch_cook', serializeError(err), flatId);
     return false;

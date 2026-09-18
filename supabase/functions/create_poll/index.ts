@@ -23,6 +23,7 @@ import {
 import { fetchActiveFlatMeals, type FlatMealRow } from '../_shared/flat-meals.ts';
 import { shouldLogMissingMembers } from '../_shared/flat-eligibility.ts';
 import { logPipelineError, serializeError } from '../_shared/pipeline-errors.ts';
+import { insertPollWithOptions } from './insert-poll.ts';
 import { selectAccompanimentOptionsForSuggestedMains, selectPollOptions } from './select-options.ts';
 
 const RECENT_DAYS_EXCLUSION = 10;
@@ -193,45 +194,43 @@ async function createPollForMeal(
       return false;
     }
 
-    const { data: poll, error: pollError } = await admin
-      .from('daily_polls')
-      .insert({ flat_id: flatId, flat_meal_id: meal.id, poll_date: pollDate, status: 'open' })
-      .select('id')
-      .single();
-    if (pollError) throw pollError;
-
-    const { error: optionsError } = await admin.from('poll_options').insert(
-      selectedRecipeIds.map((recipeId, index) => ({
-        poll_id: poll.id,
-        recipe_id: recipeId,
-        position: index + 1,
-      }))
-    );
-    if (optionsError) throw optionsError;
-
-    // Accompaniments (roti/rice pairing) are a full-meal concept — nobody
-    // orders a side of roti with their poha — so breakfast and light meals
-    // seed mains only.
-    if (meal.basis === 'full') {
-      const accompanimentRecipeIds = await selectAccompanimentOptionsForSuggestedMains(admin, {
-        flatId,
-        pollDate,
-        flatMealId: meal.id,
-        suggestedMainRecipeIds: selectedRecipeIds,
-        members: memberDiets,
-      });
-
-      if (accompanimentRecipeIds.length > 0) {
-        const { error: accError } = await admin.from('poll_accompaniment_options').insert(
-          accompanimentRecipeIds.map((recipeId, index) => ({
-            poll_id: poll.id,
+    await insertPollWithOptions(
+      admin,
+      { flat_id: flatId, flat_meal_id: meal.id, poll_date: pollDate, status: 'open' },
+      async (pollId) => {
+        const { error: optionsError } = await admin.from('poll_options').insert(
+          selectedRecipeIds.map((recipeId, index) => ({
+            poll_id: pollId,
             recipe_id: recipeId,
             position: index + 1,
           }))
         );
-        if (accError) throw accError;
+        if (optionsError) throw optionsError;
+
+        // Accompaniments (roti/rice pairing) are a full-meal concept — nobody
+        // orders a side of roti with their poha — so breakfast and light meals
+        // seed mains only.
+        if (meal.basis !== 'full') return;
+        const accompanimentRecipeIds = await selectAccompanimentOptionsForSuggestedMains(admin, {
+          flatId,
+          pollDate,
+          flatMealId: meal.id,
+          suggestedMainRecipeIds: selectedRecipeIds,
+          members: memberDiets,
+        });
+
+        if (accompanimentRecipeIds.length > 0) {
+          const { error: accError } = await admin.from('poll_accompaniment_options').insert(
+            accompanimentRecipeIds.map((recipeId, index) => ({
+              poll_id: pollId,
+              recipe_id: recipeId,
+              position: index + 1,
+            }))
+          );
+          if (accError) throw accError;
+        }
       }
-    }
+    );
 
     // TODO: push notification "Today's suggestions are up — add to the cart."
     return true;
