@@ -7,7 +7,9 @@
     "icon": "./assets/salted-icon.png",
     "scheme": "salted",
     "userInterfaceStyle": "automatic",
-    "ios": {},
+    "ios": {
+      "bundleIdentifier": "com.flatmeal.salted"
+    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#f5ead8",
@@ -32,7 +34,8 @@
         }
       ],
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "./plugins/with-ios-scene-delegate"
     ],
     "experiments": {
       "typedRoutes": true,

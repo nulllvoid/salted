@@ -62,8 +62,8 @@ Run from `app/`:
 | --- | --- |
 | `npm start` | Start Metro/Expo |
 | `npm run web` | Run web development server |
-| `npm run android` / `npm run ios` | Start Expo and open the platform; these do not create release binaries |
-| `npx expo run:android` / `npx expo run:ios` | Compile and launch locally; iOS requires macOS |
+| `npm run android` / `npm run ios` | Run `expo run:android` / `expo run:ios`: prebuild, compile a debug app and launch it (needs Android SDK / Xcode); not a release build |
+| `npx expo start` | Start Metro only, e.g. to restart it without rebuilding native code |
 | `npm run lint` | ESLint |
 | `npx tsc --noEmit` | App type checking |
 | `npm run test:unit` | Pure unit tests; no backend or browser required |
