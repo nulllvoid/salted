@@ -15,13 +15,13 @@ Dinner selection is a **shared, multi-item cart**, not a single-winner vote: `cr
               pointer to app/AGENTS.md, which says only "read the Expo 57 docs
               at https://docs.expo.dev/versions/v57.0.0/ before writing code" —
               there is no app-level architecture doc; this file is it.
-/supabase     migrations/ (from docs/05-schema.sql + RLS + pg_cron), functions/ (create_poll, close_poll, dispatch_cook implemented; wa_webhook still a stub), seed/ (CSV loader), tests/ (rollback-only SQL assertions run by scripts/migrate.mjs)
+/supabase     migrations/ (from docs/05-schema.sql + RLS + pg_cron), functions/ (create_poll, close_poll, dispatch_cook, wa_webhook — all implemented and deployed), seed/ (CSV loader), tests/ (rollback-only SQL assertions run by scripts/migrate.mjs)
 /scripts      repo tooling: db.mjs, migrate.mjs, verify-release.mjs, check-bundle-secrets.mjs, scrape-recipes/
 /data         recipe + ingredient CSVs (source of truth for seeding)
 /docs         product/architecture docs
 ```
 
-`docs/release-readiness.md` (11 Sep 2026) is the most recent status-of-record and
+`docs/release-readiness.md` (11 Sep 2026, updated 19 Sep) is the most recent status-of-record and
 is more current than this section when the two disagree.
 
 ### Commands (run from `/app`)
@@ -31,7 +31,7 @@ is more current than this section when the two disagree.
 - `npx tsc --noEmit` — typecheck
 - `npx expo lint` — lint
 - Copy `app/.env.example` to `app/.env` and fill in `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` before the app can reach a real Supabase project. `src/lib/supabase.ts` throws at import time if these are missing.
-- `npm run test:unit` — pure unit tests over the Edge Functions' shared logic (`app/e2e/unit/`), run through Playwright with no browser or dev server. Deno is not installed in this environment, so this is how `supabase/functions/**` gets tested; specs import the function `.ts` modules directly. ~31 tests, seconds to run — **the default test command; run it after any change to `supabase/functions/**` or `src/lib/`.**
+- `npm run test:unit` — pure unit tests over the Edge Functions' shared logic (`app/e2e/unit/`), run through Playwright with no browser or dev server. Deno is not installed in this environment, so this is how `supabase/functions/**` gets tested; specs import the function `.ts` modules directly. ~64 tests, seconds to run — **the default test command; run it after any change to `supabase/functions/**` or `src/lib/`.**
 - `npm run test:e2e` — Playwright browser tests against the live project (boots Expo on 8081; much slower). Serial by design (`workers: 1`): every spec shares one flat and one poll-per-day row, so parallelism corrupts state. Needs `SUPA_JWT` in `app/.env` — it forges sessions rather than driving magic-link email, which is undeliverable on this project. See `app/e2e/README.md`.
 - Single test: `npx playwright test --config=e2e/unit/playwright.config.ts <file>` (add `-g "<title>"` for one case). Same shape for `e2e/playwright.config.ts`.
 - `npm run test:e2e:typecheck` — typechecks the e2e suite (separate tsconfig from the app).
@@ -46,7 +46,7 @@ These are the actual pre-release gate — `docs/release-readiness.md` records th
 ### Supabase (linked to the live project — most work happens against it directly, not local)
 
 - Project ref `pcmtsfcjzoivagpslpch`. The Supabase CLI (`npx supabase`) works against it without extra login in this environment.
-- **Two paths to the database, and the CLI one is currently degraded.** As of 11 Sep 2026 the configured Supabase *management token* returns HTTP 401, so Edge Function deploys are blocked until it is renewed; database work goes through the direct-Postgres scripts below instead. Prefer them:
+- **Two paths to the database.** Edge Function deploys work again as of 18 Sep 2026 (a renewed personal access token). One trap: the CLI prefers a `SUPABASE_ACCESS_TOKEN` environment variable over its own stored credentials, and `npx supabase login` does *not* displace it — so if a stale value is set at the Windows user level, `login` reports success while every call still 401s. Pass a good token per command, or `setx` the new one and restart the session. Database work still goes through the direct-Postgres scripts below; prefer them:
   - `node --env-file=app/.env scripts/db.mjs "<sql>"` (or `--file <path>`) — ad-hoc query over the linked pooler with CA-verified TLS. Reads `supabase/.temp/pooler-url` + `supabase/.temp/root.crt` (both gitignored) and `SUPABASE_DB_PASSWORD`; never prints connection strings.
   - `node --env-file=app/.env scripts/migrate.mjs <migration-file>` — **dry-runs** the migration inside a transaction, executes `supabase/tests/user-facing.sql` (plus `meal-integrity.sql` for versions ≥ `20260911000000`), then rolls everything back. Add `--apply` only to commit it *and* its `supabase_migrations.schema_migrations` row. Refuses to apply a version twice. Every production migration in this repo passed a rollback-only run before being committed — keep that habit.
 - `npx supabase db push` / `npx supabase db query --linked "<sql>"` still work for straightforward cases, but note the migrations applied via `migrate.mjs` are recorded by that script, not by the CLI.

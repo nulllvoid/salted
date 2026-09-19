@@ -40,7 +40,7 @@ Flatmates who share a domestic cook spend daily effort deciding the menu, figuri
 - Optional (stretch): per-item tap opens Blinkit/Zepto search page via URL scheme. No cart APIs, no pricing.
 
 ### F4. Cook dispatch
-- At dispatch time (default 16:00), send the cook a WhatsApp utility-template message via BSP containing: greeting with cook name, all of tonight's dish names, total headcount, each dish's own scaled ingredients and cooking instructions, and any flat note for the day (free-text field any member can set before dispatch, e.g., "less spicy today").
+- At dispatch time (default 16:00), send the cook a WhatsApp utility-template message over the Meta Cloud API containing: greeting with cook name, every dish in the cart with its own count (`5 × Roti, 2 × Paneer Kurma`), and any flat note for the day (free-text field any member can set before dispatch, e.g., "less spicy today"). **Scaled ingredients and cooking instructions are deliberately not sent** — the cook knows how to cook, ingredients are the flatmates' concern (that is what the grocery screen is for), and the full payload runs 580–3783 characters against Meta's 1024-character template limit. See `docs/06-whatsapp-integration.md`.
 - Text is translated to the cook's language (Google Cloud Translate) at dispatch time.
 - Delivery status (sent/delivered/failed) shown in-app; on failure, fall back to showing the composed message with a "share to cook on WhatsApp yourself" button (wa.me link with prefilled text).
 - Stretch (week 4 only): attach a TTS voice note of the same instructions.

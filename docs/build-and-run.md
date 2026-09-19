@@ -189,4 +189,4 @@ The last command checks bundling for all platforms; it does not produce a signed
 | iOS profile/bundle errors | Confirm identifier, Apple team, certificate, provisioning, and registered device |
 | Web route works by navigation but not refresh | Check static host HTML route resolution and uploaded export structure |
 | Empty menus after backend setup | Verify migrations, recipes, schedules, and deployed scheduler functions |
-| Cook message says ready to send | Manual delivery is expected until a BSP send adapter is implemented |
+| Cook message says ready to send | Manual delivery is expected until a WhatsApp Business number is registered and the `cook_menu` template approved; the send adapter itself is implemented |

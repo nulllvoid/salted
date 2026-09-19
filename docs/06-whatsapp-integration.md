@@ -112,4 +112,4 @@ Have one native Hindi and one native Kannada speaker (or a real cook) read all ~
 
 ## Stretch: voice note
 
-TTS the translated body (Sarvam AI Bulbul / Google TTS hi-IN, kn-IN) → upload media via BSP → send as follow-up audio message. Only if weeks 1–3 land on time.
+TTS the translated body (Sarvam AI Bulbul / Google TTS hi-IN, kn-IN) → upload media via the Cloud API → send as follow-up audio message. Only if weeks 1–3 land on time. Note this would be a *free-form* media message, which needs an open 24-hour customer service window — a cook who never messages first never opens one — so it likely needs its own template or a reply from the cook first.

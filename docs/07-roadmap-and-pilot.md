@@ -1,7 +1,7 @@
 # Roadmap (4 weeks) & pilot plan
 
 ## Week 1 — foundations + longest-lead items
-- [ ] BSP signup, Meta business verification, submit hi/kn/en templates (docs/06)
+- [ ] Meta business verification + WhatsApp Business number registration (direct, no BSP), submit the hi/kn/en `cook_menu` template (docs/06)
 - [ ] Supabase project (Mumbai region), apply docs/05 schema, RLS policies, seed script reading /data CSVs
 - [ ] Expo scaffold (TypeScript, Expo Router), Supabase auth (phone OTP), flat create/join flow
 - [ ] Start recipe data entry (target 30 dishes by end of week) — founder task, spreadsheet per /data templates
