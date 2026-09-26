@@ -7,7 +7,9 @@
     "icon": "./assets/salted-icon.png",
     "scheme": "salted",
     "userInterfaceStyle": "automatic",
-    "ios": {},
+    "ios": {
+      "bundleIdentifier": "com.flatmeal.salted"
+    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#f5ead8",
@@ -37,6 +39,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ead5d51a-a9d6-4614-b49c-4a077117eccd"
+      }
+    },
+    "owner": "crashiv"
   }
 }
