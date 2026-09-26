@@ -64,9 +64,9 @@ The custom `scripts/db.mjs` and `scripts/migrate.mjs` additionally require a lin
 
    Expo generates the ignored `android/` project when needed, compiles a debug app, installs it, and starts Metro. Configuration comes from `app.json`; avoid relying on uncommitted edits in generated native folders.
 
-5. For subsequent JavaScript edits, keep Metro running. If restarting it, use `npm run android`. Re-run the native build when native dependencies or config plugins change.
+5. For subsequent JavaScript edits, keep Metro running. If restarting it, use `npx expo start` (`npm start`); `npm run android` rebuilds and reinstalls the native app. Re-run the native build when native dependencies or config plugins change.
 
-`npm run android` alone starts Expo; it does not create an APK for distribution. Expo Go is only an optional preview when its SDK/modules match; use a native build to verify auth redirects and native behavior. A custom Expo development client is not configured in this repository.
+`npm run android` compiles and installs a debug build; it does not create an APK for distribution. Expo Go is only an optional preview when its SDK/modules match; use a native build to verify auth redirects and native behavior. A custom Expo development client is not configured in this repository.
 
 ## Android: downloadable APK or store AAB
 
@@ -118,7 +118,7 @@ npx expo run:ios
 npx expo run:ios --device
 ```
 
-The device build requires appropriate Apple signing. Expo generates the ignored `ios/` directory. CocoaPods setup may be requested during the first native build. After installation, `npm run ios` starts Expo and opens iOS; it is not a release build command.
+The device build requires appropriate Apple signing. Expo generates the ignored `ios/` directory. CocoaPods setup may be requested during the first native build. After installation, use `npx expo start` to restart Metro; `npm run ios` recompiles the debug app and is not a release build command.
 
 ## iOS: cloud builds
 

@@ -23,7 +23,8 @@
 //      (_shared/whatsapp.ts) — unless DISPATCH_MODE=mock, which skips the
 //      network call and logs status='mocked' instead. The template carries
 //      dish counts and the flat note only; ingredients and method are not in
-//      it (see compose-template.ts). A send failure is logged, never retried.
+//      it (see compose-template.ts). A send failure is logged and retried
+//      only within the dispatch grace window (see recordDispatch).
 //   6. Insert dispatch_log row; wa_webhook updates status afterwards.
 
 import { createAdminClient } from '../_shared/supabase-admin.ts';
@@ -43,6 +44,7 @@ import {
   type RecipeIngredientRow,
 } from './compose-payload.ts';
 import { composeTemplateVariables } from './compose-template.ts';
+import { recordDispatch } from './record-dispatch.ts';
 import { sendTemplate } from '../_shared/whatsapp.ts';
 import { translateText } from './translate.ts';
 
@@ -232,10 +234,12 @@ async function dispatchForMeal(
     let error: string | null = null;
 
     if (mode === 'live') {
-      // Step 5: fill the approved cook_menu template and send. No retry on
-      // failure, deliberately: the poll flips to 'dispatched' either way and
-      // a cook message arriving late is worse than none (same reasoning as
-      // DISPATCH_GRACE_MINUTES). The flat can still hand the prepared
+      // Step 5: fill the approved cook_menu template and send. A failure
+      // leaves the poll 'closed', so the next tick retries it — but only
+      // while DISPATCH_GRACE_MINUTES has not expired, which bounds retries
+      // to the ~45 minutes after dispatch time. Past that the latch stops
+      // firing and the meal is never sent, because a cook message arriving
+      // hours late is worse than none. The flat can still hand the prepared
       // message over from the cook-message screen.
       try {
         bspMessageId = await sendTemplate({
@@ -257,8 +261,7 @@ async function dispatchForMeal(
       }
     }
 
-    await admin.from('dispatch_log').insert({
-      poll_id: poll.id,
+    await recordDispatch(admin, poll.id, {
       mode,
       language: cook.language,
       headcount,
@@ -268,9 +271,7 @@ async function dispatchForMeal(
       status,
       error,
     });
-
-    await admin.from('daily_polls').update({ status: 'dispatched' }).eq('id', poll.id);
-    return true;
+    return status !== 'failed';
   } catch (err) {
     await logPipelineError(admin, 'dispatch_cook', serializeError(err), flatId);
     return false;

@@ -3,7 +3,7 @@ create temp table release_poll(id uuid);
 grant all on release_poll to authenticated;
 with p as (
   insert into public.daily_polls(flat_id,flat_meal_id,poll_date,status)
-  select household,(select id from public.flat_meals where flat_id=household and name='Dinner'),current_date,'open' from release_check returning id
+  select household,(select id from public.flat_meals where flat_id=household and name='Dinner'),(now() at time zone 'Asia/Kolkata')::date + 1,'open' from release_check returning id
 ) insert into release_poll select id from p;
 set local role authenticated;
 do $$
@@ -57,3 +57,24 @@ begin
 end $$;
 reset role;
 select 'dietary veto, quantity cap, item counts, meal attendance isolation and schedule validation passed' as verification;
+-- A cart is locked by the clock, not only by the cron-flipped status: an
+-- 'open' poll whose close time has already passed must refuse edits.
+create temp table stale_poll(id uuid);
+grant all on stale_poll to authenticated;
+with p as (
+  insert into public.daily_polls(flat_id,flat_meal_id,poll_date,status)
+  select household,(select id from public.flat_meals where flat_id=household and name='Breakfast'),(now() at time zone 'Asia/Kolkata')::date - 1,'open' from release_check returning id
+) insert into stale_poll select id from p;
+set local role authenticated;
+do $$
+declare r uuid;
+begin
+  select id into r from public.recipes where slug='steamed-rice';
+  begin
+    insert into public.cart_items(poll_id,recipe_id,quantity,added_by,updated_by) select id,r,1,auth.uid(),auth.uid() from stale_poll;
+    raise exception 'Cart accepted an edit after its close time';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select 'cart refuses edits after the close time even while status is still open' as verification;

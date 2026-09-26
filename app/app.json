@@ -34,7 +34,8 @@
         }
       ],
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "./plugins/with-ios-scene-delegate"
     ],
     "experiments": {
       "typedRoutes": true,
