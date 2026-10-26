@@ -6,6 +6,8 @@ Built with Expo SDK 57, React Native, TypeScript, Expo Router, and Supabase. And
 
 ## Start here
 
+- [Animated GitHub Pages website: preview and deployment](site/README.md)
+
 - [Android, iOS, and web build walkthrough](docs/build-and-run.md)
 - [Contribution guide](CONTRIBUTING.md)
 - [Design system](docs/mobile-design-system.md)
