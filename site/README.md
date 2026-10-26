@@ -8,6 +8,8 @@ From the repository root run `node site/serve.mjs`, then visit http://127.0.0.1:
 
 ## Publish
 
+For Pages configured to deploy from `main` and `/ (root)`, the repository's root `index.html` redirects visitors to `site/`. This prevents GitHub's default README page from replacing the website. The Actions workflow below remains supported and publishes the website directly at the root URL.
+
 In the GitHub repository, open Settings → Pages and select **GitHub Actions** as the source. Commit and push `site/` and `.github/workflows/pages.yml` to `main`, or manually run the **Deploy Salted website to GitHub Pages** workflow. The deployment step reports the actual published URL. The workflow publishes only this directory; it does not publish app configuration or environment files.
 
 Assets use relative paths, so both repository subpaths and custom domains work. No runtime dependencies, analytics or external fonts are loaded. The meal planner uses temporary sample state only; it does not connect to Supabase. Grocery quantities are illustrative and omit pantry staples. Copying a message requires clipboard permission; when unavailable, the message is selected for manual copying.
